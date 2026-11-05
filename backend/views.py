@@ -25,6 +25,7 @@ def report(request, section):
         def read(name):
             return repository.read(name, window, refresh)
 
+        # This endpoint combines outcomes, daily counts and failure locations.
         if section == "summary":
             data = {
                 "counts": explain_outcomes(read("overview")[0]),
@@ -35,9 +36,11 @@ def report(request, section):
             data = read("coverage")[0]
         elif section == "performance":
             data = repository.performance_report(window, refresh)
+        # Return counts and timing summaries without returning the underlying events.
         elif section == "investigation":
             data = {"counts": read("investigation")[0], "payload": read("payload"), "readiness": read("readiness")[0]}
         return JsonResponse(data)
+    # Explain errors to the reader without exposing database messages or credentials.
     except (ValueError, OverflowError):
         return JsonResponse({"error": "Choose valid start and end dates in the right order."}, status=400)
     except psycopg.errors.QueryCanceled:

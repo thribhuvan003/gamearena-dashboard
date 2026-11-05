@@ -16,6 +16,7 @@ function Finding({ title, children, next }) {
   );
 }
 
+// Keep the month in UTC, even when the reader's laptop uses another time zone.
 function monthLabel(month) {
   return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-GB", {
     month: "short",
@@ -31,6 +32,7 @@ export function Findings({ summary, investigation, performance, error }) {
   const ready = investigation?.readiness;
   // The SQL orders phase/stage rows by failure event count, including repeat events.
   const stage = summary?.failures[0];
+  // A change in frame rate needs two months with actual, valid FPS readings.
   const months = (performance?.monthly || [])
     .map((row) => ({
       month: monthLabel(row.month),
@@ -82,6 +84,7 @@ export function Findings({ summary, investigation, performance, error }) {
               : "No client reconnection events were recorded."}
           </Finding>
         )}
+        {/* Convert the stored milliseconds to seconds for the founder's view. */}
         {ready && (
           <Finding
             title="How long does the readiness timer take?"

@@ -1,6 +1,6 @@
 -- STEP 2: Count sessions correctly (each session only once).
 -- 'No recorded success' is NOT proof of a permanent failure.
--- Some sessions have both failures and later successes.
+-- A session may have both results; these totals do not establish event order.
 
 WITH session_flags AS (
     SELECT

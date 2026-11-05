@@ -9,18 +9,20 @@ from psycopg.rows import dict_row
 from logic.measurements import combine_inventory, combine_measurements, monthly_measurements
 from logic.summary import date_window
 
-SQL = Path(__file__).resolve().parents[1] / "database" / "dashboard"
+# Each named section in reports.sql answers one dashboard question.
+SQL = Path(__file__).resolve().parents[1] / "database" / "reports.sql"
 measurement_lock = Lock()
-# Requests can select a report, but cannot supply SQL or arbitrary file paths.
-QUERIES = {name: (SQL / f"{name}.sql").read_text() for name in (
-    "range", "overview", "trend", "failures", "coverage", "metrics", "inventory",
-    "investigation", "payload", "readiness"
-)}
+QUERIES = {}
+for section in SQL.read_text(encoding="utf-8").split("-- report: ")[1:]:
+    name, _, query_text = section.partition("\n")
+    QUERIES[name] = query_text.strip()
+
 
 
 def query(name, params=None):
     """Run a fixed SQL file in a read-only transaction, with bound date values."""
     url = os.environ.get("DATABASE_URL", "postgresql://root@127.0.0.1:26257/gamearena_analytics?sslmode=disable")
+    # Named columns keep the results readable. A report cannot modify the source data.
     with psycopg.connect(url, connect_timeout=5, row_factory=dict_row) as connection:
         connection.read_only = True
         connection.execute("SET TIME ZONE 'UTC'")
@@ -31,6 +33,7 @@ def query(name, params=None):
 def read(name, window, refresh=False, timeout=300):
     """Refresh replaces the cached summary, so changing dates cannot bring back older results."""
     key = f"{name}:{window['start'].isoformat()}:{window['end'].isoformat()}"
+    # An empty list is a real cached answer; only a missing result requires another query.
     rows = None if refresh else cache.get(key)
     if rows is None:
         rows = query(name, window)
@@ -55,6 +58,7 @@ def performance_report(window, refresh=False):
     # An empty date range should not trigger a full measurement calculation.
     if window["end"].date() <= dates["start"] or window["start"].date() > dates["end"]:
         return {"metrics": [], "inventory": [], "monthly": []}
+    # Cache one set of daily totals and reuse it for the reader's chosen dates.
     whole_period = date_window(str(dates["start"]), str(dates["end"]))
     # Rapid date clicks wait for one calculation instead of launching duplicate sample scans.
     with measurement_lock:

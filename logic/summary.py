@@ -6,6 +6,7 @@ def date_window(start, end):
     first, last = date.fromisoformat(start), date.fromisoformat(end)
     if first > last:
         raise ValueError("The start date must come before the end date.")
+    # Stop at midnight after the last day so all of the selected end date is included.
     return {
         "start": datetime.combine(first, time.min, timezone.utc),
         "end": datetime.combine(last + timedelta(days=1), time.min, timezone.utc),
@@ -27,6 +28,7 @@ def recent_start(first, last):
 def explain_outcomes(counts):
     """Separate overlapping success/failure flags into four groups that add up."""
     total, success, failure, both = (counts[key] for key in ("total", "succeeded", "failed", "both"))
+    # Remove the overlap from each single-outcome group and count it once in Both.
     groups = [
         {"name": "Success, no failure recorded", "count": success - both, "tone": "green"},
         {"name": "Both success and failure", "count": both, "tone": "blue"},

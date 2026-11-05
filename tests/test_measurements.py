@@ -1,3 +1,4 @@
+"""Synthetic daily totals let us test weighted means without using private telemetry."""
 import unittest
 from datetime import date
 

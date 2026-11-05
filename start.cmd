@@ -1,5 +1,7 @@
 @echo off
 cd /d "%~dp0"
+rem Start Docker Desktop and the cockroachdb container first.
+rem SQL reads the totals, logic combines them, Django serves them, and React shows them.
 rem Keep one local server for both the dashboard page and its summaries.
 if not exist .venv\Scripts\python.exe (
     echo Run setup.cmd first.

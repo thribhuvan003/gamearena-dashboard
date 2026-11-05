@@ -1,3 +1,4 @@
+"""Check API behavior using a local test client and simulated database failures."""
 import os
 import unittest
 from unittest.mock import patch

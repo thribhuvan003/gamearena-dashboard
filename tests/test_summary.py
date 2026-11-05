@@ -1,3 +1,4 @@
+"""Check date boundaries and overlapping session outcomes with small known examples."""
 import unittest
 from datetime import datetime, timezone
 

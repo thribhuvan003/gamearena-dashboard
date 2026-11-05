@@ -15,6 +15,7 @@ export function number(value, digits = 0) {
     : Number(value).toLocaleString("en-IN", { maximumFractionDigits: digits });
 }
 
+// Display the database's UTC day consistently in every time zone.
 export function dateLabel(day) {
   return new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -34,6 +35,7 @@ function Explanation({ children }) {
   );
 }
 
+// Distinguish a request error from a successful report containing no events.
 export function Notice({ error, loading, children }) {
   if (error)
     return (
@@ -109,8 +111,8 @@ function DailyCounts({ rows }) {
   const latest = [...rows].reverse();
   const shown = showAll ? latest : latest.slice(0, 7);
   return (
-    <article className="panel">
-      <h3>Daily session counts</h3>
+    <details className="panel supporting">
+      <summary>Daily session counts</summary>
       <p className="caption">
         Each session is counted once per UTC day. A session seen on several days
         appears on each day. Observed means any event was recorded. With success
@@ -143,10 +145,11 @@ function DailyCounts({ rows }) {
             : `Show all ${rows.length} recorded dates`}
         </button>
       )}
-    </article>
+    </details>
   );
 }
 
+// Count sessions once in the headline and explain repeated events in the detailed tables.
 export function SessionOverview({
   report,
   coverage,
@@ -353,6 +356,7 @@ export function MonthlyComparison({ report }) {
   );
 }
 
+// Show only measured values. A dash means no usable reading; zero is a real reading.
 export function Performance({ report, error, loading }) {
   return (
     <section id="performance" className="section-block">
@@ -380,30 +384,35 @@ export function Performance({ report, error, loading }) {
                   : "Average in recorded units — definition needs confirmation"}
               </p>
               <p className="caption">{metricHelp[key]}</p>
-              <dl className="metric-details">
-                <div>
-                  <dt>Numeric samples</dt>
-                  <dd>{number(metric?.valid)}</dd>
-                </div>
-                <div>
-                  <dt>Minimum / maximum</dt>
-                  <dd>
-                    {number(metric?.minimum, 2)} / {number(metric?.maximum, 2)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Null / invalid entries</dt>
-                  <dd>
-                    {number(metric?.missing)} / {number(metric?.invalid)}
-                  </dd>
-                </div>
-              </dl>
-              <Explanation>
-                Every valid numeric reading has equal weight in the average.
-                Minimum and maximum are the lowest and highest valid readings.
-                Null means missing; invalid means a rejected value. Neither is
-                changed to zero. These sample counts are not session counts.
-              </Explanation>
+              {/* Keep sample checks available without competing with the performance result. */}
+              <details className="explanation">
+                <summary>How this average was calculated</summary>
+                <dl className="metric-details">
+                  <div>
+                    <dt>Numeric samples</dt>
+                    <dd>{number(metric?.valid)}</dd>
+                  </div>
+                  <div>
+                    <dt>Minimum / maximum</dt>
+                    <dd>
+                      {number(metric?.minimum, 2)} /{" "}
+                      {number(metric?.maximum, 2)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Null / invalid entries</dt>
+                    <dd>
+                      {number(metric?.missing)} / {number(metric?.invalid)}
+                    </dd>
+                  </div>
+                </dl>
+                <p>
+                  Every valid numeric reading has equal weight in the average.
+                  Minimum and maximum are the lowest and highest valid readings.
+                  Null means missing; invalid means a rejected value. Neither is
+                  changed to zero. These sample counts are not session counts.
+                </p>
+              </details>
             </article>
           );
         })}

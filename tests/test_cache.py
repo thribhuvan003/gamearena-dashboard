@@ -1,3 +1,4 @@
+"""Check caching in an isolated test cache so fixtures cannot replace live results."""
 import os
 import unittest
 from unittest.mock import patch

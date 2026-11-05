@@ -12,6 +12,7 @@ import {
 } from "./sections";
 import "./style.css";
 
+// Independent report requests let each section appear as soon as its data is ready.
 const reports = ["summary", "coverage", "performance", "investigation"];
 
 // The browser asks for named reports. It never receives a database connection or sends SQL.
@@ -54,6 +55,7 @@ function csvCell(value) {
 }
 
 function App() {
+  // Range means dates in storage. Period means the dates selected on screen.
   const [range, setRange] = useState(null);
   const [period, setPeriod] = useState(null);
   const [preset, setPreset] = useState("all");
@@ -128,6 +130,7 @@ function App() {
     setPeriod({ start: next.start, end: next.end });
   }
 
+  // Keep the current report if the entered start date is after the end date.
   function applyPeriod(event) {
     event.preventDefault();
     const dates = Object.fromEntries(new FormData(event.currentTarget));
@@ -179,6 +182,7 @@ function App() {
 
   // Download displayed aggregates only; raw events, IDs and diagnostic text stay private.
   function exportReport() {
+    // Use separate CSV groups so event counts cannot be mistaken for session counts.
     const counts = data.summary.counts;
     const rows = [
       ["Selected dates (UTC)", period.start, period.end],

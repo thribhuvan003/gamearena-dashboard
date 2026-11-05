@@ -170,12 +170,6 @@ export const columnHelp = {
     "Mean of valid recorded jitter samples. The producer must confirm the unit and exactly what variation is measured.",
   "FPS samples":
     "Number of valid numeric frame-rate readings used in that month's average. This is not the number of sessions or frames.",
-  Measurement:
-    "The kind of performance reading collected, such as frame rate or latency.",
-  "Batches with an array":
-    "Statistics records containing a list of readings for this measurement. A list can be empty or contain missing entries.",
-  "Share of all batches":
-    "Batches containing this measurement array divided by all statistics batches in the selected period, multiplied by 100.",
   "Field and meaning":
     "The original measurement name and its plain-language explanation. Unconfirmed producer definitions are marked explicitly.",
   "Array batches":
@@ -208,6 +202,7 @@ export const columnHelp = {
     "What the field represents, how the dashboard uses it, and any important limitation.",
 };
 
+// Explain the four mutually exclusive rows where founders see the outcome totals.
 export const outcomeHelp = {
   "Success, no failure recorded":
     "At least one success event and no failure event within the selected dates.",

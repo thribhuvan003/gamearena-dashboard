@@ -1,3 +1,4 @@
+"""Serve the dashboard and its summaries on the local laptop."""
 import os
 from pathlib import Path
 

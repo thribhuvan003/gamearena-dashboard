@@ -502,7 +502,9 @@ footer {
 
 /* Phone tables become readable records rather than tiny horizontal grids. */
 @media (max-width: 650px) {
-  .findings-grid { grid-template-columns: 1fr; }
+  .findings-grid {
+    grid-template-columns: 1fr;
+  }
   .local-badge {
     display: none;
   }

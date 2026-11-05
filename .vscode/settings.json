@@ -6,19 +6,32 @@
     "frontend/dist": true,
     "frontend/package-lock.json": true,
     "**/__pycache__": true,
-    "**/*.pyc": true
+    "**/*.pyc": true,
+    "database/0*.sql": true,
+    "**/__init__.py": true,
+    ".vscode": true,
+    ".gitignore": true,
+    "tests": true
   },
   "explorer.compactFolders": false,
   "terminal.integrated.defaultProfile.windows": "Command Prompt",
   "terminal.integrated.profiles.windows": {
-    "Command Prompt": { "path": "${env:windir}\\System32\\cmd.exe" }
+    "Command Prompt": {
+      "path": "${env:windir}\\System32\\cmd.exe"
+    }
   },
   "editor.wordWrap": "on",
   "editor.fontSize": 16,
   "editor.lineHeight": 25,
   "editor.fontWeight": "500",
   "editor.tabSize": 4,
-  "[javascriptreact]": { "editor.tabSize": 2 },
-  "[css]": { "editor.tabSize": 2 },
-  "[json]": { "editor.tabSize": 2 }
+  "[javascriptreact]": {
+    "editor.tabSize": 2
+  },
+  "[css]": {
+    "editor.tabSize": 2
+  },
+  "[json]": {
+    "editor.tabSize": 2
+  }
 }

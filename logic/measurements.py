@@ -23,6 +23,7 @@ def combine_measurements(rows, window):
                 item["minimum"] = row["minimum"]
             if item["maximum"] is None or row["maximum"] > item["maximum"]:
                 item["maximum"] = row["maximum"]
+    # Divide after adding every day together. A field with no valid readings has no mean.
     for item in result.values():
         total = item.pop("total")
         item["mean"] = total / item["valid"] if item["valid"] else None
@@ -43,6 +44,7 @@ def combine_inventory(rows, window):
 
 def monthly_measurements(rows, window):
     """Compare calendar months using the same daily totals, with no extra sample scan."""
+    # Use the batch month and keep only the part inside the selected dates.
     months = {}
     for row in selected_days(rows, window):
         month = row["day"].strftime("%Y-%m")
