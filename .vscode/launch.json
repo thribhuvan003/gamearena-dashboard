@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Start dashboard",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "command": "cmd.exe /d /c start.cmd"
+    },
+    {
+      "name": "Run project checks",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "command": "cmd.exe /d /c check.cmd"
+    }
+  ]
+}
