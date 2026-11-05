@@ -16,7 +16,8 @@ SELECT
          THEN payload->>'phase' ELSE 'Not recorded / other' END AS phase,
     CASE WHEN payload->>'stage' IN ('Session', 'Config', 'Websocket', 'Device', 'Video', 'Audio', 'Input', 'Scream')
          THEN payload->>'stage' ELSE 'Not recorded / other' END AS stage,
-    COUNT(*) AS events, COUNT(DISTINCT session_id) AS sessions
+    COUNT(*) AS events, COUNT(DISTINCT session_id) AS sessions,
+    COUNT(*) FILTER (WHERE connection_id IS NULL) AS missing_id
 FROM session_telemetry_events
 WHERE recorded_at >= %(start)s AND recorded_at < %(end)s
     AND payload->>'event' = 'pipeline.connect.failure'
@@ -64,6 +65,7 @@ SELECT
     COUNT(*) FILTER (WHERE errors > 1) AS repeated_error_sessions,
     COALESCE(MAX(errors), 0) AS max_errors_in_one_session,
     COALESCE(SUM(reconnects), 0)::INT8 AS reconnect_events,
+    COALESCE(SUM(reconnects) FILTER (WHERE reconnects > 1), 0)::INT8 AS repeat_events,
     COUNT(*) FILTER (WHERE reconnects > 0) AS reconnect_sessions,
     COUNT(*) FILTER (WHERE reconnects > 1) AS repeated_reconnect_sessions,
     COALESCE(MAX(reconnects), 0) AS max_reconnects_in_one_session,

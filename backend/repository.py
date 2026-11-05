@@ -32,7 +32,11 @@ def query(name, params=None):
 
 def read(name, window, refresh=False, timeout=300):
     """Refresh replaces the cached summary, so changing dates cannot bring back older results."""
+    # The two updated reports include new columns; keep their old cached rows separate.
+    version = 2 if name in {"failures", "investigation"} else 1
     key = f"{name}:{window['start'].isoformat()}:{window['end'].isoformat()}"
+    if version == 2:
+        key += ":v2"
     # An empty list is a real cached answer; only a missing result requires another query.
     rows = None if refresh else cache.get(key)
     if rows is None:
