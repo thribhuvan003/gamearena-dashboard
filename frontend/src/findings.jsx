@@ -65,7 +65,7 @@ export function Findings({ summary, investigation, performance, error }) {
               ? `${number(sessions.no_success)} of ${number(sessions.attempted)} sessions that attempted to connect had no recorded success.`
               : "No connection attempts were recorded."}
             {stage
-              ? ` The ${stage.stage} stage in the ${stage.phase} phase logged ${number(stage.events)} failure events across ${number(stage.sessions)} sessions, the highest event count for a stage and phase.`
+              ? ` The most failure events were logged at ${stage.stage} (${stage.phase}): ${number(stage.events)} events across ${number(stage.sessions)} sessions.`
               : " No connection failure events were recorded."}
           </Finding>
         )}
@@ -78,7 +78,7 @@ export function Findings({ summary, investigation, performance, error }) {
             }
           >
             {signals.reconnect_sessions
-              ? `${number(signals.repeated_reconnect_sessions)} of the ${number(signals.reconnect_sessions)} sessions that reconnected did so more than once. Together, all reconnecting sessions produced ${number(signals.reconnect_events)} reconnect events.`
+              ? `${number(signals.repeated_reconnect_sessions)} of ${number(signals.reconnect_sessions)} reconnecting sessions reconnected more than once. There were ${number(signals.reconnect_events)} reconnect events in total.`
               : "No client reconnection events were recorded."}
           </Finding>
         )}
@@ -91,7 +91,7 @@ export function Findings({ summary, investigation, performance, error }) {
             }
           >
             {ready.valid
-              ? `Half of the ${number(ready.valid)} valid timing records were at or below ${number(ready.median, 1)} ms; about 95% were at or below ${number(ready.p95, 1)} ms. These are readings, not people.`
+              ? `Across ${number(ready.valid)} timer readings, the median was ${number(ready.median / 1000, 2)} seconds. About 95% of readings were at or below ${number(ready.p95 / 1000, 2)} seconds.`
               : "No valid readiness timing was recorded for these dates."}
           </Finding>
         )}

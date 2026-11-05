@@ -207,7 +207,7 @@ code {
 /* Cards show the main numbers. Tables hold detail; no charts are drawn. */
 .findings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 .finding.panel {
@@ -502,6 +502,7 @@ footer {
 
 /* Phone tables become readable records rather than tiny horizontal grids. */
 @media (max-width: 650px) {
+  .findings-grid { grid-template-columns: 1fr; }
   .local-badge {
     display: none;
   }
