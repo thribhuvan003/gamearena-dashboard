@@ -1,0 +1,627 @@
+/* Readable text is the default. Supporting explanations are never tiny captions. */
+:root {
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: #22352a;
+  background: #f3f5f0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.6;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+html {
+  scroll-padding-top: 20px;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-weight: 750;
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: 1.2;
+  letter-spacing: -1px;
+}
+h2 {
+  font-weight: 700;
+  font-size: 29px;
+  line-height: 1.3;
+}
+h3 {
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1.4;
+}
+p {
+  color: #52634f;
+}
+small {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  color: #52634f;
+  margin-top: 5px;
+}
+strong {
+  font-weight: 700;
+}
+button,
+input {
+  font: inherit;
+}
+button,
+.page-nav a {
+  min-height: 46px;
+}
+button {
+  padding: 10px 17px;
+  border: 1px solid #b8c9b2;
+  border-radius: 8px;
+  color: #244d33;
+  background: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover {
+  background: #eaf1e3;
+}
+button:disabled {
+  cursor: default;
+  color: #657061;
+  background: #ebeee7;
+  border-color: #d4dcd0;
+}
+button[aria-pressed="true"],
+.primary {
+  color: white;
+  background: #2d6845;
+  border-color: #2d6845;
+}
+button[aria-pressed="true"]:hover,
+.primary:hover {
+  background: #235438;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #548f35;
+  outline-offset: 4px;
+}
+a {
+  color: #245a38;
+}
+code {
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+/* One full-width page leaves room for larger text on a laptop. */
+.dashboard {
+  width: min(1500px, 100%);
+  margin: auto;
+  padding: 34px;
+}
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 24px;
+}
+.page-header p:last-child {
+  margin-top: 12px;
+  max-width: 830px;
+}
+.eyebrow {
+  color: #356146;
+  font-size: 17px;
+  font-weight: 650;
+  margin-bottom: 10px;
+}
+.local-badge {
+  border: 1px solid #b6cda8;
+  background: #e8f0dc;
+  border-radius: 8px;
+  padding: 8px 12px;
+  white-space: nowrap;
+  font-size: 17px;
+}
+.page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 26px 0;
+}
+.page-nav a {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 16px;
+  background: white;
+  border: 1px solid #d1dccc;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+}
+.page-nav a:hover {
+  background: #e7efdf;
+}
+
+/* Presets, their meaning and the applied dates remain visible together. */
+.period-panel {
+  background: white;
+  border: 1px solid #d9e1d3;
+  border-radius: 12px;
+  padding: 26px;
+  margin-bottom: 36px;
+}
+.selected-period {
+  font-size: 25px;
+  font-weight: 650;
+  color: #254930;
+  margin: 10px 0 6px;
+}
+.preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+.date-form {
+  display: grid;
+  grid-template-columns: minmax(0, 230px) minmax(0, 230px) max-content;
+  align-items: end;
+  gap: 16px;
+  margin-top: 20px;
+}
+.date-form label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  min-width: 0;
+}
+.date-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid #a9bba1;
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #243d2a;
+  background: white;
+}
+.report-status {
+  margin-top: 18px;
+  padding: 12px 15px;
+  border-radius: 7px;
+  background: #edf3e6;
+  color: #35592c;
+}
+
+/* Cards show the main numbers. Tables hold detail; no charts are drawn. */
+.findings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+  gap: 16px;
+}
+.finding.panel {
+  margin: 0;
+}
+.finding p {
+  margin-top: 12px;
+}
+.supporting > summary {
+  min-height: 44px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #254930;
+}
+.section-block {
+  margin: 36px 0;
+  scroll-margin-top: 20px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+.section-intro {
+  margin: 12px 0 20px;
+  max-width: 1050px;
+}
+.stats-grid,
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+.stat,
+.panel {
+  min-width: 0;
+  background: white;
+  border: 1px solid #d9e1d3;
+  border-radius: 12px;
+  padding: 23px;
+}
+.panel {
+  margin: 20px 0;
+}
+.stat.accent {
+  background: #def0c3;
+  border-color: #c8dfa6;
+}
+.stat h3 {
+  font-size: 18px;
+}
+.big-number {
+  display: block;
+  font-size: 44px;
+  line-height: 1.2;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  margin: 15px 0 12px;
+  overflow-wrap: anywhere;
+}
+.stat p {
+  font-size: 17px;
+}
+.two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.two-columns .panel {
+  margin: 0;
+  height: 100%;
+}
+.caption {
+  margin: 12px 0 18px;
+  font-size: 17px;
+  line-height: 1.65;
+}
+.explanation {
+  margin-top: 16px;
+  font-size: 17px;
+}
+.explanation summary {
+  cursor: pointer;
+  color: #2b6240;
+  font-weight: 600;
+}
+.explanation p {
+  margin-top: 9px;
+}
+.signals {
+  margin: 15px 0 0;
+}
+.signals > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 20px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e1e8db;
+}
+.signals > div:last-child {
+  border: 0;
+}
+.signals dt {
+  font-weight: 650;
+}
+.signals dd {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Table labels turn into labels beside values on phones. */
+.table-scroll {
+  overflow-x: auto;
+  margin: 18px 0;
+}
+/* One expandable glossary per table keeps meanings close without repeating every row. */
+.column-guide {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid #d9e1d3;
+  border-radius: 8px;
+  background: #f5f8f1;
+  font-size: 17px;
+}
+.column-guide summary {
+  min-height: 44px;
+  padding: 8px 0;
+  cursor: pointer;
+  color: #2b6240;
+  font-weight: 700;
+}
+.column-guide dl {
+  margin: 8px 0;
+}
+.column-guide dl > div {
+  margin-top: 14px;
+}
+.column-guide dt {
+  font-weight: 700;
+}
+.column-guide dd {
+  margin: 4px 0 0;
+  color: #52634f;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 17px;
+}
+th,
+td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #dce4d6;
+  vertical-align: top;
+}
+th {
+  color: #36532e;
+  background: #f3f6ef;
+  font-size: 17px;
+  font-weight: 650;
+}
+td {
+  color: #344c2e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+td strong {
+  display: block;
+}
+td:first-child {
+  min-width: 155px;
+}
+tr:last-child td {
+  border-bottom: 0;
+}
+.metric-grid .panel {
+  margin: 0;
+}
+.metric-card p {
+  font-size: 17px;
+}
+.metric-details {
+  font-size: 17px;
+  margin: 0;
+}
+.metric-details > div {
+  padding: 10px 0;
+  border-top: 1px solid #e2e8dc;
+}
+.metric-details dt {
+  color: #52634f;
+}
+.metric-details dd {
+  margin: 5px 0 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.method-note {
+  background: #e9f0df;
+  padding: 18px 20px;
+  border-left: 4px solid #7fa65c;
+  color: #3f5c33;
+  margin: 20px 0;
+}
+.notice {
+  background: #edf3e4;
+  border: 1px solid #c7d6bb;
+  padding: 15px 18px;
+  border-radius: 8px;
+  margin: 16px 0;
+  color: #3d5e2d;
+}
+.notice.error {
+  background: #fff1e8;
+  border-color: #dcae8e;
+  color: #813f1f;
+}
+.empty {
+  padding: 18px 0;
+  font-size: 18px;
+}
+
+/* Definitions use the same readable body text as the report. */
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 20px 0;
+}
+.guide-grid .panel {
+  margin: 0;
+}
+.guide-grid p {
+  margin-top: 12px;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+}
+.tabs button[aria-selected="true"] {
+  background: #2d6845;
+  color: white;
+  border-color: #2d6845;
+}
+footer {
+  border-top: 1px solid #d2deca;
+  padding-top: 22px;
+  font-size: 17px;
+  color: #52634f;
+}
+
+/* Smaller laptops use two columns instead of squeezing four cards. */
+.period-panel h2 {
+  font-size: 21px;
+}
+.custom-dates {
+  margin-top: 12px;
+}
+.custom-dates summary,
+.explanation summary {
+  min-height: 44px;
+  padding: 8px 0;
+  cursor: pointer;
+  color: #2b6240;
+  font-weight: 600;
+}
+@media (max-width: 1150px) {
+  .stats-grid,
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .two-columns,
+  .guide-grid {
+    grid-template-columns: 1fr;
+  }
+  .two-columns .panel {
+    height: auto;
+  }
+  .local-badge {
+    white-space: normal;
+  }
+}
+
+/* Phone tables become readable records rather than tiny horizontal grids. */
+@media (max-width: 650px) {
+  .local-badge {
+    display: none;
+  }
+  :root {
+    font-size: 18px;
+  }
+  .dashboard {
+    padding: 22px 16px;
+  }
+  .page-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+  h2 {
+    font-size: 27px;
+  }
+  .page-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .page-nav a {
+    justify-content: center;
+    font-size: 17px;
+    padding: 9px 10px;
+  }
+  .period-panel,
+  .panel,
+  .stat {
+    padding: 19px;
+  }
+  .selected-period {
+    font-size: 23px;
+  }
+  .preset-buttons {
+    gap: 9px;
+  }
+  .preset-buttons button {
+    flex: 1 1 140px;
+  }
+  .date-form {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .date-form button {
+    grid-column: 1 / -1;
+  }
+  .date-form input {
+    font-size: 17px;
+    padding: 8px 5px;
+  }
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .stats-grid,
+  .metric-grid {
+    gap: 12px;
+  }
+  .stat h3 {
+    font-size: 18px;
+  }
+  .stat {
+    padding: 16px;
+  }
+  .big-number {
+    font-size: 38px;
+  }
+  .explanation summary {
+    overflow-wrap: anywhere;
+  }
+  .table-scroll {
+    overflow: visible;
+  }
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+    width: 100%;
+  }
+  thead {
+    display: none;
+  }
+  tbody tr {
+    border: 1px solid #d9e2d1;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    padding: 12px;
+  }
+  td {
+    border: 0;
+    padding: 9px 0;
+  }
+  td:first-child {
+    min-width: 0;
+  }
+  td::before {
+    content: attr(data-label);
+    display: block;
+    color: #536b45;
+    font-size: 17px;
+    font-weight: 650;
+    margin-bottom: 4px;
+  }
+  .signals > div {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .signals dd {
+    font-size: 28px;
+  }
+  .tabs button {
+    flex: 1 1 130px;
+  }
+}
+
+@media (max-width: 400px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}

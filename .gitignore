@@ -1,0 +1,16 @@
+.venv/
+.cache/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+.env
+.env.*
+# Keep private backups, report exports and local credentials off the remote.
+*telemetry_backup*
+*.sql.gz
+*.csv
+*.zip
+*.pem
+*.key
+outputs/
