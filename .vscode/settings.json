@@ -11,7 +11,12 @@
     "**/__init__.py": true,
     ".vscode": true,
     ".gitignore": true,
-    "tests": true
+    "tests": true,
+    ".git": true,
+    "logic": true,
+    "setup.cmd": true,
+    "start.cmd": true,
+    "check.cmd": true
   },
   "explorer.compactFolders": false,
   "terminal.integrated.defaultProfile.windows": "Command Prompt",
