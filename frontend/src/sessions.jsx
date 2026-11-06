@@ -306,6 +306,13 @@ export function SessionExplorer({ period, selection, revision }) {
                 <strong>{number(result.data.total)} affected sessions</strong>.
                 Open a session to inspect the recorded sequence.
               </p>
+              {result.data.website_configured && (
+                <p>
+                  This report uses an imported historical snapshot. A session
+                  may no longer exist on live GameArena; its recorded evidence
+                  remains available here.
+                </p>
+              )}
               {!result.data.website_configured && (
                 <p>
                   The GameArena website address is not configured yet. Copy an
@@ -340,7 +347,7 @@ export function SessionExplorer({ period, selection, revision }) {
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Open in GameArena
+                        Look up in GameArena
                       </a>
                     )}
                     <button onClick={() => copyId(row.session_id)}>
