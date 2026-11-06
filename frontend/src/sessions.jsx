@@ -141,9 +141,7 @@ export function SessionExplorer({ period, selection, revision }) {
   async function copyId(id) {
     try {
       await navigator.clipboard.writeText(id);
-      setCopyStatus(
-        "Session ID copied. Paste it into GameArena's session search.",
-      );
+      setCopyStatus("Session ID copied for your investigation or bug report.");
     } catch {
       setCopyStatus(
         "Copy is unavailable. Select and copy the session ID shown in the row.",
@@ -283,8 +281,8 @@ export function SessionExplorer({ period, selection, revision }) {
             </p>
           )}
           {selected.explanation && <p>{selected.explanation}</p>}
-          <label>
-            Order sessions{" "}
+          <label className="session-order">
+            <span>Sort affected sessions</span>
             <select
               aria-label="Order affected sessions"
               value={sort}
@@ -306,20 +304,10 @@ export function SessionExplorer({ period, selection, revision }) {
                 <strong>{number(result.data.total)} affected sessions</strong>.
                 Open a session to inspect the recorded sequence.
               </p>
-              {result.data.website_configured && (
-                <p>
-                  This report uses an imported historical snapshot. A session
-                  may no longer exist on live GameArena; its recorded evidence
-                  remains available here.
-                </p>
-              )}
-              {!result.data.website_configured && (
-                <p>
-                  The GameArena website address is not configured yet. Copy an
-                  ID to find that session on the website, or inspect the local
-                  evidence below.
-                </p>
-              )}
+              <p>
+                These sessions come from the imported snapshot. Open recorded
+                session to inspect the events and measurements preserved here.
+              </p>
               <p role="status">{copyStatus}</p>
               <EvidenceTable
                 label="Affected sessions"
@@ -341,20 +329,11 @@ export function SessionExplorer({ period, selection, revision }) {
                     </small>
                   </>,
                   <div className="preset-buttons">
-                    {row.website_url && (
-                      <a
-                        href={row.website_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Look up in GameArena
-                      </a>
-                    )}
                     <button onClick={() => copyId(row.session_id)}>
                       Copy session ID
                     </button>
                     <button onClick={() => setSession(row.session_id)}>
-                      View local evidence
+                      Open recorded session
                     </button>
                   </div>,
                 ])}

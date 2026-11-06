@@ -14,10 +14,6 @@ USE_TZ = True
 TIME_ZONE = "UTC"
 DEFAULT_CHARSET = "utf-8"
 
-# Use the team's verified session route, with {session_id} where the ID belongs.
-GAMEARENA_SESSION_URL = os.environ.get(
-    "GAMEARENA_SESSION_URL", "https://alpha.gamearena.tech/admin/sessions/{session_id}"
-)
 
 # Save only aggregate results locally, so restarting VS Code does not repeat every sample scan.
 CACHES = {"default": {

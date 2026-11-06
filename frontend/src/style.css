@@ -662,3 +662,29 @@ footer {
 .session-detail td {
   overflow-wrap: anywhere;
 }
+
+.session-order {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 360px;
+  max-width: 100%;
+  margin: 24px 0;
+  font-weight: 650;
+}
+.session-order select {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 40px 12px 14px;
+  border: 1px solid #71866a;
+  border-radius: 8px;
+  background-color: #fff;
+  color: #20331a;
+  font: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.session-order select:focus-visible {
+  outline: 3px solid #426934;
+  outline-offset: 3px;
+}

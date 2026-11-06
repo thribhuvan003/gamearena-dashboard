@@ -2,14 +2,12 @@ from uuid import UUID
 from math import isfinite
 
 import psycopg
-from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from backend import repository
 from logic.sessions import FILTERS, SORTS, enrich_session, page_number
 from logic.summary import date_window
-from logic.session_links import session_url
 from logic.issues import FPS_REVIEW_THRESHOLD
 
 PAGE_SIZE = 25
@@ -50,8 +48,6 @@ def session_list(request, params):
     rows = repository.execute(sql, params)
     total = rows[0]["total"] if rows else 0
     items = [enrich_session(row["item"]) for row in rows if row["item"]]
-    for item in items:
-        item["website_url"] = session_url(settings.GAMEARENA_SESSION_URL, item["session_id"])
     if items:
         metrics = repository.query("session_page_metrics", {**params, "session_ids": [UUID(str(item["session_id"])) for item in items]})
         by_session = {}
@@ -59,8 +55,7 @@ def session_list(request, params):
             by_session.setdefault(str(metric["session_id"]), {})[metric["metric"]] = metric["mean"]
         for item in items:
             item["metrics"] = by_session.get(str(item["session_id"]), {})
-    return {"items": items, "total": total, "page": page, "page_size": PAGE_SIZE,
-            "website_configured": session_url(settings.GAMEARENA_SESSION_URL, UUID(int=0)) is not None}
+    return {"items": items, "total": total, "page": page, "page_size": PAGE_SIZE}
 
 
 def session_detail(request, params, session_id):

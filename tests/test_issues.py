@@ -4,7 +4,6 @@ from unittest.mock import patch
 from django.test import Client
 
 from logic.issues import ISSUES, issue_groups
-from logic.session_links import session_url
 
 
 class IssueTests(unittest.TestCase):
@@ -29,13 +28,6 @@ class IssueTests(unittest.TestCase):
         sql, params = execute.call_args.args
         self.assertNotIn(code, sql)
         self.assertEqual(params["error_code"], code)
-
-    def test_website_links_require_verified_https_template(self):
-        self.assertIsNone(session_url("", "abc"))
-        self.assertIsNone(session_url("javascript:{session_id}", "abc"))
-        self.assertIsNone(session_url("https://user:secret@example.test/{session_id}", "abc"))
-        self.assertEqual(session_url("https://example.test/admin/sessions/{session_id}", "abc"),
-                         "https://example.test/admin/sessions/abc")
 
     def test_bad_dates_and_mutations_never_reach_database(self):
         with patch("backend.repository.execute") as execute:
