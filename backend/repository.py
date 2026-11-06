@@ -9,25 +9,34 @@ from psycopg.rows import dict_row
 from logic.measurements import combine_inventory, combine_measurements, monthly_measurements
 from logic.summary import date_window
 
-# Each named section in reports.sql answers one dashboard question.
-SQL = Path(__file__).resolve().parents[1] / "database" / "reports.sql"
+# Each SQL file groups related questions; section names are the API's fixed query names.
+SQL = Path(__file__).resolve().parents[1] / "database"
 measurement_lock = Lock()
 QUERIES = {}
-for section in SQL.read_text(encoding="utf-8").split("-- report: ")[1:]:
-    name, _, query_text = section.partition("\n")
-    QUERIES[name] = query_text.strip()
+for sql_file in sorted(SQL.glob("*.sql")):
+    for section in sql_file.read_text(encoding="utf-8").split("-- report: ")[1:]:
+        name, _, query_text = section.partition("\n")
+        if name in QUERIES:
+            raise ValueError(f"Duplicate SQL report: {name}")
+        QUERIES[name] = query_text.strip()
+
+for name in QUERIES:
+    QUERIES[name] = QUERIES[name].replace("{session_rows}", QUERIES["session_rows"].rstrip(";")).replace("{session_numbers}", QUERIES["session_numbers"].rstrip(";"))
 
 
 
 def query(name, params=None):
-    """Run a fixed SQL file in a read-only transaction, with bound date values."""
+    return execute(QUERIES[name], params)
+
+
+def execute(sql, params=None):
     url = os.environ.get("DATABASE_URL", "postgresql://root@127.0.0.1:26257/gamearena_analytics?sslmode=disable")
     # Named columns keep the results readable. A report cannot modify the source data.
     with psycopg.connect(url, connect_timeout=5, row_factory=dict_row) as connection:
         connection.read_only = True
         connection.execute("SET TIME ZONE 'UTC'")
         connection.execute("SET statement_timeout = '180s'")
-        return connection.execute(QUERIES[name], params).fetchall()
+        return connection.execute(sql, params).fetchall()
 
 
 def read(name, window, refresh=False, timeout=300):

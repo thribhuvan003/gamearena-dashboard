@@ -153,6 +153,7 @@ function DailyCounts({ rows }) {
 export function SessionOverview({
   report,
   coverage,
+  onInvestigate,
   error,
   loading,
 }) {
@@ -194,6 +195,19 @@ export function SessionOverview({
         not necessarily new sessions or people. Success and failure refer to
         logged pipeline connection results, not the whole user's experience.
       </p>
+      <div className="preset-buttons">
+        {[
+          ["all", "All sessions"],
+          ["success", "With success"],
+          ["failure", "With failure"],
+          ["ws_error", "WebSocket errors"],
+          ["missing_stats", "Without statistics"],
+        ].map(([category, label]) => (
+          <button key={category} onClick={() => onInvestigate({ category })}>
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="stats-grid">
         <Card
           label="Observed sessions"
@@ -284,7 +298,17 @@ export function SessionOverview({
                 <small>{row.phase}</small>
               </>,
               number(row.events),
-              number(row.sessions),
+              <button
+                onClick={() =>
+                  onInvestigate({
+                    category: "failure",
+                    phase: row.phase,
+                    stage: row.stage,
+                  })
+                }
+              >
+                {number(row.sessions)} sessions
+              </button>,
             ]) || []
           }
         />

@@ -2,7 +2,7 @@ import React from "react";
 import { number } from "./sections";
 
 // Pair each observation with the next product question, without guessing a cause.
-function Finding({ title, children, next }) {
+function Finding({ title, children, next, action }) {
   return (
     <article className="panel finding">
       <h3>{title}</h3>
@@ -12,6 +12,7 @@ function Finding({ title, children, next }) {
           <strong>Check next:</strong> {next}
         </p>
       )}
+      {action}
     </article>
   );
 }
@@ -26,7 +27,13 @@ function monthLabel(month) {
 }
 
 // SQL and Python have already counted the sessions and calculated the averages.
-export function Findings({ summary, investigation, performance, error }) {
+export function Findings({
+  summary,
+  investigation,
+  performance,
+  error,
+  onInvestigate,
+}) {
   const sessions = summary?.counts;
   const signals = investigation?.counts;
   const ready = investigation?.readiness;
@@ -34,9 +41,12 @@ export function Findings({ summary, investigation, performance, error }) {
   const stage = summary?.failures[0];
   // Each failure belongs to exactly one stage/phase row. Session counts can overlap.
   const failures = summary?.failures.reduce((sum, row) => sum + row.events, 0);
-  const missingId = summary?.failures.reduce((sum, row) => sum + row.missing_id, 0);
+  const missingId = summary?.failures.reduce(
+    (sum, row) => sum + row.missing_id,
+    0,
+  );
   // Called only for a positive denominator. Round only the displayed percentage.
-  const share = (part, total) => number(100 * part / total, 1) + "%";
+  const share = (part, total) => number((100 * part) / total, 1) + "%";
   // A change in frame rate needs two months with actual, valid FPS readings.
   const months = (performance?.monthly || [])
     .map((row) => ({
@@ -62,6 +72,28 @@ export function Findings({ summary, investigation, performance, error }) {
         {summary && (
           <Finding
             title="Where does connection setup need attention?"
+            action={
+              <>
+                <button
+                  onClick={() => onInvestigate({ category: "no_success" })}
+                >
+                  Inspect sessions without success
+                </button>
+                {stage && (
+                  <button
+                    onClick={() =>
+                      onInvestigate({
+                        category: "failure",
+                        phase: stage.phase,
+                        stage: stage.stage,
+                      })
+                    }
+                  >
+                    Inspect leading failure stage
+                  </button>
+                )}
+              </>
+            }
             next={
               stage &&
               "Start with this phase and stage. A logged failure shows where to look, not why it happened."
@@ -78,6 +110,13 @@ export function Findings({ summary, investigation, performance, error }) {
         {signals && (
           <Finding
             title="Do the same sessions keep reconnecting?"
+            action={
+              <button
+                onClick={() => onInvestigate({ category: "repeat_reconnect" })}
+              >
+                Inspect repeated reconnections
+              </button>
+            }
             next={
               signals.reconnect_sessions > 0 &&
               "Review the reconnect flow in repeat cases. A reconnect alone does not tell us whether an interruption was unexpected."
@@ -92,6 +131,11 @@ export function Findings({ summary, investigation, performance, error }) {
         {ready && (
           <Finding
             title="How long does the readiness timer take?"
+            action={
+              <button onClick={() => onInvestigate({ category: "readiness" })}>
+                Inspect readiness sessions
+              </button>
+            }
             next={
               ready.valid > 0 &&
               "Confirm when this timer starts and stops, then investigate the slower cases."
@@ -105,6 +149,11 @@ export function Findings({ summary, investigation, performance, error }) {
         {performance && (
           <Finding
             title="Did measured frame rate change?"
+            action={
+              <button onClick={() => onInvestigate({ category: "measured" })}>
+                Inspect measured sessions
+              </button>
+            }
             next={
               previous &&
               "Compare the same devices and releases before attributing a change to the product. These months may cover different days and sessions."
@@ -121,9 +170,10 @@ export function Findings({ summary, investigation, performance, error }) {
       {failures > 0 && (
         <p className="method-note">
           <strong>Can we trace a failure to its connection?</strong>{" "}
-          {share(missingId, failures)} of failure events lacked a connection ID
-          {" "}({number(missingId)} of {number(failures)}).
-          {missingId > 0 && " For those events, the session and stage are available for investigation. Recording the connection ID when one exists would make individual attempts easier to trace."}
+          {share(missingId, failures)} of failure events lacked a connection ID{" "}
+          ({number(missingId)} of {number(failures)}).
+          {missingId > 0 &&
+            " For those events, the session and stage are available for investigation. Recording the connection ID when one exists would make individual attempts easier to trace."}
         </p>
       )}
       {!error && (!summary || !investigation || !performance) && (

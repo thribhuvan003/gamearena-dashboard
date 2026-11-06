@@ -1,5 +1,7 @@
+import { getReport } from "./api";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { SessionExplorer } from "./sessions";
 import { Findings } from "./findings";
 import {
   DataGuide,
@@ -15,38 +17,17 @@ import "./style.css";
 // Independent report requests let each section appear as soon as its data is ready.
 const reports = ["summary", "coverage", "performance", "investigation"];
 
-// The browser asks for named reports. It never receives a database connection or sends SQL.
-async function getReport(name, params = {}, signal) {
-  let response;
-  try {
-    response = await fetch(`/api/${name}/?${new URLSearchParams(params)}`, {
-      signal,
-    });
-  } catch (error) {
-    if (error.name === "AbortError") throw error;
-    throw new Error(
-      "Cannot reach the local server. Keep the VS Code CMD terminal running, then retry.",
-    );
-  }
-  let result;
-  try {
-    result = await response.json();
-  } catch (error) {
-    if (error.name === "AbortError") throw error;
-    throw new Error(
-      "The server did not return a readable report. Restart the dashboard and retry.",
-    );
-  }
-  if (!response.ok)
-    throw new Error(
-      result.error ||
-        "This report could not be loaded. Select Refresh data to retry.",
-    );
-  return result;
-}
-
 function App() {
   // Range means dates in storage. Period means the dates selected on screen.
+  const [selection, setSelection] = useState({ category: "all" });
+  function investigate(filters) {
+    setSelection(filters);
+    requestAnimationFrame(() =>
+      document
+        .getElementById("session-explorer")
+        ?.scrollIntoView({ behavior: "smooth" }),
+    );
+  }
   const [range, setRange] = useState(null);
   const [period, setPeriod] = useState(null);
   const [preset, setPreset] = useState("all");
@@ -176,7 +157,7 @@ function App() {
       <header className="page-header">
         <div>
           <p className="eyebrow">GameArena · Product analytics</p>
-          <h1>Understand your sessions</h1>
+          <h1>Investigate your sessions</h1>
           <p>
             Connections, measurements and important evidence — explained in
             plain language.
@@ -185,8 +166,8 @@ function App() {
         <span className="local-badge">Local, read-only data</span>
       </header>
       <nav className="page-nav" aria-label="Dashboard sections">
-        <a href="#findings">Product findings</a>
-        <a href="#overview">Sessions</a>
+        <a href="#session-explorer">Session explorer</a>
+        <a href="#findings">Supporting findings</a>
         <a href="#performance">Performance</a>
         <a href="#data-guide">Data guide</a>
       </nav>
@@ -280,10 +261,18 @@ function App() {
         )}
       </section>
       {period && (
+        <SessionExplorer
+          period={period}
+          selection={selection}
+          revision={revision}
+        />
+      )}
+      {period && (
         <Findings
           summary={data.summary}
           investigation={data.investigation}
           performance={data.performance}
+          onInvestigate={investigate}
           error={errors.summary || errors.investigation || errors.performance}
         />
       )}
@@ -292,8 +281,10 @@ function App() {
         report={data.summary}
         coverage={data.coverage}
         error={errors.summary || errors.coverage}
+        onInvestigate={investigate}
         loading={loading.summary || loading.coverage}
       />
+
       <Investigation
         report={data.investigation}
         error={errors.investigation}
@@ -310,8 +301,8 @@ function App() {
         <p>
           <a href="#period">Back to date selection</a>
         </p>
-        GameArena · Aggregate reports only. Summaries are cached; select Refresh
-        data after importing records.
+        GameArena · Local session investigation. Summaries are cached; select
+        Refresh data after importing records.
       </footer>
     </main>
   );

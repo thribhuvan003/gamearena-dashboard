@@ -628,3 +628,37 @@ footer {
     grid-template-columns: 1fr;
   }
 }
+
+.session-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: end;
+  margin: 1.5rem 0;
+}
+.session-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 100%;
+}
+.session-filters input,
+.session-filters select {
+  font: inherit;
+  padding: 0.65rem;
+  max-width: 100%;
+  border: 1px solid #9badab;
+  border-radius: 0.4rem;
+  background: white;
+}
+.session-id {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.session-detail {
+  scroll-margin-top: 1rem;
+  margin-top: 2rem;
+}
+.session-detail td {
+  overflow-wrap: anywhere;
+}
