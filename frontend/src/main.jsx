@@ -45,15 +45,6 @@ async function getReport(name, params = {}, signal) {
   return result;
 }
 
-// Quote CSV cells and keep producer field names from becoming spreadsheet formulas.
-function csvCell(value) {
-  const text =
-    typeof value === "string" && /^[=+\-@\t\r]/.test(value)
-      ? `'${value}`
-      : String(value ?? "");
-  return `"${text.replaceAll('"', '""')}"`;
-}
-
 function App() {
   // Range means dates in storage. Period means the dates selected on screen.
   const [range, setRange] = useState(null);
@@ -118,7 +109,6 @@ function App() {
   }, [period, revision]);
 
   const busy = Object.values(loading).some(Boolean);
-  const complete = reports.every((name) => Boolean(data[name]));
   const periodText = period
     ? `${dateLabel(period.start)} to ${dateLabel(period.end)}`
     : "Available data";
@@ -178,99 +168,6 @@ function App() {
     } finally {
       setLoading((previous) => ({ ...previous, range: false }));
     }
-  }
-
-  // Download displayed aggregates only; raw events, IDs and diagnostic text stay private.
-  function exportReport() {
-    // Use separate CSV groups so event counts cannot be mistaken for session counts.
-    const counts = data.summary.counts;
-    const rows = [
-      ["Selected dates (UTC)", period.start, period.end],
-      ["Session metric", "Value"],
-    ];
-    Object.entries(counts)
-      .filter(([, value]) => typeof value === "number")
-      .forEach(([name, value]) => rows.push([name, value]));
-    rows.push([], ["Session outcome", "Sessions"]);
-    counts.groups.forEach((group) => rows.push([group.name, group.count]));
-    rows.push([], ["Statistics coverage", "Count"]);
-    Object.entries(data.coverage).forEach(([name, value]) =>
-      rows.push([name, value]),
-    );
-    rows.push(
-      [],
-      ["Day (UTC)", "Observed sessions", "With success", "With failure"],
-    );
-    data.summary.trend.forEach((row) =>
-      rows.push([row.day, row.sessions, row.succeeded, row.failed]),
-    );
-    rows.push([], ["Failure phase", "Stage", "Events", "Sessions"]);
-    data.summary.failures.forEach((row) =>
-      rows.push([row.phase, row.stage, row.events, row.sessions]),
-    );
-    rows.push([], ["Measurement field", "Present batches", "Array batches"]);
-    data.performance.inventory.forEach((row) =>
-      rows.push([row.metric, row.present_rows, row.array_rows]),
-    );
-    rows.push(
-      [],
-      [
-        "Metric",
-        "Unit",
-        "Numeric samples",
-        "Null entries",
-        "Invalid entries",
-        "Average",
-        "Minimum",
-        "Maximum",
-      ],
-    );
-    data.performance.metrics.forEach((row) =>
-      rows.push([
-        row.metric,
-        row.metric === "fps" ? "FPS" : "Recorded units (unconfirmed)",
-        row.valid,
-        row.missing,
-        row.invalid,
-        row.mean,
-        row.minimum,
-        row.maximum,
-      ]),
-    );
-    rows.push([], ["Month", "Metric", "Numeric samples", "Average"]);
-    data.performance.monthly.forEach((month) =>
-      month.metrics.forEach((metric) =>
-        rows.push([month.month, metric.metric, metric.valid, metric.mean]),
-      ),
-    );
-    rows.push([], ["Investigation measure", "Value"]);
-    Object.entries(data.investigation.counts).forEach(([name, value]) =>
-      rows.push([name, value]),
-    );
-    rows.push([], ["Readiness field: timeToReadyMs", "Value"]);
-    Object.entries(data.investigation.readiness).forEach(([name, value]) =>
-      rows.push([name, value]),
-    );
-    rows.push([], ["Payload field", "Occurrences", "Sessions"]);
-    data.investigation.payload.forEach((row) =>
-      rows.push([row.field, row.occurrences, row.sessions]),
-    );
-    rows.push(
-      [],
-      [
-        "Notes",
-        "Sessions are not unique users. Event flags overlap. Statistics use batch start. Null and invalid samples are excluded. Producer units and timing definitions require confirmation.",
-      ],
-    );
-    const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8;" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `gamearena-${period.start}-to-${period.end}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
   }
 
   // Display sections contain no counting rules. SQL and Python own those calculations.
@@ -396,14 +293,7 @@ function App() {
         coverage={data.coverage}
         error={errors.summary || errors.coverage}
         loading={loading.summary || loading.coverage}
-        exportReport={exportReport}
-        canExport={complete && !busy}
       />
-      {!complete && period && (
-        <p className="caption">
-          The complete CSV becomes available after all sections have loaded.
-        </p>
-      )}
       <Investigation
         report={data.investigation}
         error={errors.investigation}

@@ -155,8 +155,6 @@ export function SessionOverview({
   coverage,
   error,
   loading,
-  exportReport,
-  canExport,
 }) {
   const counts = report?.counts;
   const signals = [
@@ -186,9 +184,6 @@ export function SessionOverview({
     <section id="overview" className="section-block">
       <div className="section-heading">
         <h2>Session overview</h2>
-        <button onClick={exportReport} disabled={!canExport}>
-          Download report CSV
-        </button>
       </div>
       <Notice error={error} loading={loading}>
         Updating session counts for the selected dates…

@@ -1,5 +1,5 @@
 -- report: coverage
--- Count measured sessions for the overview; keep array-presence checks in the CSV.
+-- Count measured sessions and available measurement arrays for the selected dates.
 SELECT COUNT(*) AS rows, COUNT(DISTINCT session_id) AS sessions,
     COUNT(*) FILTER (WHERE jsonb_typeof(samples->'fps') = 'array') AS fps,
     COUNT(*) FILTER (WHERE jsonb_typeof(samples->'latency') = 'array') AS latency,
