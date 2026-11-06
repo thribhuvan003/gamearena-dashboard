@@ -84,6 +84,10 @@ function useEvidence(endpoint, params) {
   const [result, setResult] = useState({ loading: true });
   const key = JSON.stringify(params);
   useEffect(() => {
+    if (!endpoint) {
+      setResult({});
+      return;
+    }
     const controller = new AbortController();
     setResult({ loading: true });
     getReport(endpoint, JSON.parse(key), controller.signal)
@@ -99,157 +103,272 @@ function useEvidence(endpoint, params) {
 }
 
 export function SessionExplorer({ period, selection, revision }) {
-  const [filters, setFilters] = useState(selection);
+  const groups = useEvidence("issues", {
+    ...period,
+    revision,
+    refresh: revision ? "1" : "0",
+  });
+  const [selected, setSelected] = useState(null);
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState("errors");
   const [session, setSession] = useState(null);
+  const [copyStatus, setCopyStatus] = useState("");
   useEffect(() => {
-    setFilters(selection);
+    setSelected(selection);
     setPage(1);
     setSession(null);
   }, [selection, period]);
-  const result = useEvidence("sessions", {
+  const result = useEvidence(selected ? "sessions" : null, {
     ...period,
-    ...filters,
+    ...selected,
     page,
+    sort,
     revision,
   });
-  function apply(event) {
-    event.preventDefault();
-    setFilters(Object.fromEntries(new FormData(event.currentTarget)));
+
+  function openGroup(group) {
+    setSelected(group);
     setPage(1);
     setSession(null);
+    setCopyStatus("");
+    requestAnimationFrame(() =>
+      document
+        .getElementById("affected-sessions")
+        ?.scrollIntoView({ behavior: "smooth" }),
+    );
   }
+
+  async function copyId(id) {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopyStatus(
+        "Session ID copied. Paste it into GameArena's session search.",
+      );
+    } catch {
+      setCopyStatus(
+        "Copy is unavailable. Select and copy the session ID shown in the row.",
+      );
+    }
+  }
+
   return (
     <section id="session-explorer" className="section-block">
-      <h2>Investigate individual sessions</h2>
+      <h2>Which issues affect sessions?</h2>
       <p>
-        One row per session with events in the selected UTC dates. Results
-        describe recorded evidence, not unique people or permanent outcomes.
+        Select an issue to see its affected sessions, then open the session
+        evidence. No search or filter entry is needed.
       </p>
-      <form
-        className="session-filters"
-        onSubmit={apply}
-        key={JSON.stringify(selection)}
-      >
-        <label>
-          Session ID
-          <input
-            name="search"
-            defaultValue={selection.search || ""}
-            maxLength={36}
-            placeholder="Full ID or part of an ID"
-          />
-        </label>
-        <label>
-          Evidence
-          <select name="category" defaultValue={selection.category || "all"}>
-            {Object.entries(categories).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Failure phase
-          <input
-            name="phase"
-            defaultValue={selection.phase || ""}
-            placeholder="Any phase"
-          />
-        </label>
-        <label>
-          Failure stage
-          <input
-            name="stage"
-            defaultValue={selection.stage || ""}
-            placeholder="Any stage"
-          />
-        </label>
-        <label>
-          Mean FPS below
-          <input
-            name="fps_below"
-            type="number"
-            min="0"
-            step="any"
-            placeholder="Optional threshold"
-          />
-        </label>
-        <label>
-          Sort
-          <select name="sort" defaultValue="newest">
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="reconnects">Most reconnections</option>
-            <option value="errors">Most WebSocket errors</option>
-          </select>
-        </label>
-        <button type="submit">Apply session filters</button>
-      </form>
-      <p className="caption">
-        FPS filtering uses your chosen threshold, not an assumed quality rating.
-        Latency and bitrate retain recorded units. Failure phase and stage match
-        the same failure event. Tags overlap. Duration requires both lifecycle
-        boundaries inside these dates. Device and OS comparisons require an
-        approved mapping.
-      </p>
-      <Notice {...result} />
-      {result.data && (
+      <Notice {...groups} />
+      {groups.data && (
         <>
           <p>
-            <strong>{number(result.data.total)} matching sessions</strong> ·{" "}
-            {categories[filters.category || "all"]}
-            {filters.stage && ` · ${filters.phase} / ${filters.stage}`}
+            <strong>{number(groups.data.total)} observed sessions</strong> in
+            these dates. Each percentage is a share of this total. Groups
+            overlap, so their counts must not be added.
+          </p>
+          <div className="findings-grid">
+            {groups.data.groups.map((group) => (
+              <article className="panel" key={group.category}>
+                <h3>{group.title}</h3>
+                <p>
+                  <strong className="big-number">
+                    {number(group.sessions)}
+                  </strong>{" "}
+                  sessions ·{" "}
+                  {group.share == null
+                    ? "No observations"
+                    : number(group.share, 1) + "%"}
+                </p>
+                {group.events != null && (
+                  <p>
+                    {number(group.events)} recorded events within these
+                    sessions.
+                  </p>
+                )}
+                <p>{group.explanation}</p>
+                <button
+                  disabled={!group.sessions}
+                  onClick={() => openGroup(group)}
+                >
+                  View affected sessions
+                </button>
+              </article>
+            ))}
+          </div>
+          <h3>Connection failures grouped by phase and stage</h3>
+          <p>
+            Each row counts distinct sessions with a failure at that phase and
+            stage. A session can appear in several rows.
           </p>
           <EvidenceTable
-            label="Session explorer"
+            label="Issue groups by failure stage"
             columns={[
-              "Session ID",
-              "First / last event (UTC)",
-              "Recorded evidence",
-              "Duration",
-              "Attempts / connections",
-              "Reconnects / WS errors",
-              "Mean FPS / latency / bitrate",
+              "Failure phase / stage",
+              "Affected sessions",
+              "Failure events",
+              "Investigate",
             ]}
-            rows={result.data.items.map((row) => [
+            rows={groups.data.stages.map((row) => [
+              row.phase + " / " + row.stage,
+              number(row.sessions),
+              number(row.events),
               <button
-                className="session-id"
-                onClick={() => setSession(row.session_id)}
+                onClick={() =>
+                  openGroup({
+                    category: "failure",
+                    phase: row.phase,
+                    stage: row.stage,
+                    title: row.phase + " / " + row.stage,
+                  })
+                }
               >
-                {row.session_id}
+                View sessions
               </button>,
-              <>
-                {time(row.first_seen)}
-                <small>{time(row.last_seen)}</small>
-              </>,
-              row.tags.join(" · ") || "No classified result",
-              row.duration_seconds == null
-                ? "Not determinable"
-                : number(row.duration_seconds, 1) + " seconds",
-              `${number(row.attempts)} / ${number(row.connections)}`,
-              `${number(row.reconnects)} / ${number(row.ws_errors)}`,
-              ["fps", "latency", "bitrate"]
-                .map((name) => number(row.metrics?.[name], 2))
-                .join(" / "),
             ])}
           />
-          <Pages
-            data={result.data}
-            page={page}
-            onChange={setPage}
-            busy={result.loading}
+          <h3>Recorded errors grouped by code</h3>
+          <p>
+            Error codes identify a recorded category. They do not establish a
+            root cause. Counts include errors, socket errors and explicit
+            pipeline failures with a code.
+          </p>
+          <EvidenceTable
+            label="Issue groups by error code"
+            columns={[
+              "Error code",
+              "Affected sessions",
+              "Error events",
+              "Investigate",
+            ]}
+            rows={groups.data.codes.map((row) => [
+              row.error_code,
+              number(row.sessions),
+              number(row.events),
+              <button
+                onClick={() =>
+                  openGroup({
+                    category: "all",
+                    error_code: row.error_code,
+                    title: "Error code: " + row.error_code,
+                  })
+                }
+              >
+                View sessions
+              </button>,
+            ])}
           />
+          {!groups.data.total && (
+            <p>No session events were recorded for these dates.</p>
+          )}
         </>
       )}
-      {session && (
-        <SessionDetail
-          key={session + JSON.stringify(period)}
-          id={session}
-          period={period}
-          onClose={() => setSession(null)}
-        />
+      {selected && (
+        <article id="affected-sessions" className="panel session-detail">
+          <button
+            onClick={() => {
+              setSelected(null);
+              setSession(null);
+            }}
+          >
+            Back to issue groups
+          </button>
+          <h3>
+            {selected.title ||
+              categories[selected.category] ||
+              "Affected sessions"}
+          </h3>
+          {selected.stage && (
+            <p>
+              {selected.phase} / {selected.stage}
+            </p>
+          )}
+          {selected.explanation && <p>{selected.explanation}</p>}
+          <label>
+            Order sessions{" "}
+            <select
+              aria-label="Order affected sessions"
+              value={sort}
+              onChange={(event) => {
+                setSort(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="errors">Most WebSocket errors</option>
+              <option value="reconnects">Most reconnections</option>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </label>
+          <Notice {...result} />
+          {result.data && (
+            <>
+              <p>
+                <strong>{number(result.data.total)} affected sessions</strong>.
+                Open a session to inspect the recorded sequence.
+              </p>
+              {!result.data.website_configured && (
+                <p>
+                  The GameArena website address is not configured yet. Copy an
+                  ID to find that session on the website, or inspect the local
+                  evidence below.
+                </p>
+              )}
+              <p role="status">{copyStatus}</p>
+              <EvidenceTable
+                label="Affected sessions"
+                columns={[
+                  "Session ID",
+                  "First event (UTC)",
+                  "Recorded evidence",
+                  "Open session",
+                ]}
+                rows={result.data.items.map((row) => [
+                  <code className="session-id">{row.session_id}</code>,
+                  time(row.first_seen),
+                  <>
+                    {row.tags.join(" · ")}
+                    <small>
+                      {number(row.failure_events)} failure events ·{" "}
+                      {number(row.reconnects)} reconnects ·{" "}
+                      {number(row.ws_errors)} WebSocket errors
+                    </small>
+                  </>,
+                  <div className="preset-buttons">
+                    {row.website_url && (
+                      <a
+                        href={row.website_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open in GameArena
+                      </a>
+                    )}
+                    <button onClick={() => copyId(row.session_id)}>
+                      Copy session ID
+                    </button>
+                    <button onClick={() => setSession(row.session_id)}>
+                      View local evidence
+                    </button>
+                  </div>,
+                ])}
+              />
+              <Pages
+                data={result.data}
+                page={page}
+                onChange={setPage}
+                busy={result.loading}
+              />
+            </>
+          )}
+          {session && (
+            <SessionDetail
+              key={session + JSON.stringify(period)}
+              id={session}
+              period={period}
+              onClose={() => setSession(null)}
+            />
+          )}
+        </article>
       )}
     </section>
   );
@@ -433,7 +552,10 @@ function SessionDetail({ id, period, onClose }) {
                 </label>
                 <label>
                   Connection
-                  <select name="connection" defaultValue={filters.connection || ""}>
+                  <select
+                    name="connection"
+                    defaultValue={filters.connection || ""}
+                  >
                     <option value="">All connections</option>
                     <option value="missing">Missing connection ID</option>
                     {[

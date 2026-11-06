@@ -11,6 +11,7 @@ SELECT e.session_id, MIN(recorded_at) AS first_seen, MAX(recorded_at) AS last_se
     COUNT(*) FILTER (WHERE payload->>'event' = 'pipeline.connect.attempt') AS attempts,
     BOOL_OR(COALESCE(payload->>'event' = 'pipeline.connect.success', FALSE)) AS success,
     BOOL_OR(COALESCE(payload->>'event' = 'pipeline.connect.failure', FALSE)) AS failure,
+    COUNT(*) FILTER (WHERE payload->>'event' = 'pipeline.connect.failure') AS failure_events,
     COUNT(*) FILTER (WHERE event_type = 'client_connected') AS client_connected,
     COUNT(*) FILTER (WHERE event_type = 'client_disconnected') AS disconnects,
     COUNT(*) FILTER (WHERE event_type = 'client_reconnected') AS reconnects,
@@ -33,6 +34,12 @@ GROUP BY e.session_id;
 WITH sessions AS ({session_rows}), filtered AS (
     SELECT * FROM sessions s WHERE {filter}
     AND {performance_filter}
+    AND (%(error_code)s = '' OR EXISTS (
+        SELECT 1 FROM session_telemetry_events e WHERE e.session_id = s.session_id
+        AND recorded_at >= %(start)s AND recorded_at < %(end)s
+        AND (level = 'error' OR event_type = 'ws_error' OR payload->>'event' = 'pipeline.connect.failure')
+        AND LEFT(COALESCE(NULLIF(payload->>'errorCode',''), payload->>'code'), 100) = %(error_code)s
+    ))
     AND (%(search)s = '' OR strpos(session_id::STRING, %(search)s) > 0)
     AND (%(stage)s = '' AND %(phase)s = '' OR EXISTS (
         SELECT 1 FROM session_telemetry_events e WHERE e.session_id = s.session_id

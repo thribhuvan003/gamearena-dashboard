@@ -19,7 +19,8 @@ const reports = ["summary", "coverage", "performance", "investigation"];
 
 function App() {
   // Range means dates in storage. Period means the dates selected on screen.
-  const [selection, setSelection] = useState({ category: "all" });
+  const [showReports, setShowReports] = useState(false);
+  const [selection, setSelection] = useState(null);
   function investigate(filters) {
     setSelection(filters);
     requestAnimationFrame(() =>
@@ -59,7 +60,10 @@ function App() {
 
   // Load panels independently. Cancel old requests when the user chooses different dates.
   useEffect(() => {
-    if (!period) return;
+    if (!period || !showReports) {
+      setLoading((previous) => ({ range: previous.range }));
+      return;
+    }
     const controller = new AbortController();
     const fresh = revision !== lastRefresh.current;
     lastRefresh.current = revision;
@@ -87,7 +91,7 @@ function App() {
         });
     }
     return () => controller.abort();
-  }, [period, revision]);
+  }, [period, revision, showReports]);
 
   const busy = Object.values(loading).some(Boolean);
   const periodText = period
@@ -157,19 +161,17 @@ function App() {
       <header className="page-header">
         <div>
           <p className="eyebrow">GameArena · Product analytics</p>
-          <h1>Investigate your sessions</h1>
+          <h1>Find issues. Open the affected sessions.</h1>
           <p>
-            Connections, measurements and important evidence — explained in
-            plain language.
+            Grouped connection problems and errors, with the sessions behind
+            each — explained in plain language.
           </p>
         </div>
         <span className="local-badge">Local, read-only data</span>
       </header>
       <nav className="page-nav" aria-label="Dashboard sections">
-        <a href="#session-explorer">Session explorer</a>
-        <a href="#findings">Supporting findings</a>
-        <a href="#performance">Performance</a>
-        <a href="#data-guide">Data guide</a>
+        <a href="#session-explorer">Issue groups</a>
+        <a href="#period">Change period</a>
       </nav>
       <section id="period" className="period-panel" aria-label="Report period">
         <h2>Selected period</h2>
@@ -250,7 +252,7 @@ function App() {
               ? "Updating the selected period. Sections fill in as they finish."
               : Object.keys(errors).length
                 ? "Some sections need attention. Check the message and select Refresh data to retry."
-                : "Report ready for the selected period."}
+                : "Selected dates applied."}
           </p>
         )}
         {range && !range.start && (
@@ -267,36 +269,48 @@ function App() {
           revision={revision}
         />
       )}
-      {period && (
-        <Findings
-          summary={data.summary}
-          investigation={data.investigation}
-          performance={data.performance}
-          onInvestigate={investigate}
-          error={errors.summary || errors.investigation || errors.performance}
-        />
-      )}
-      <SessionOverview
-        key={`sessions-${period?.start}-${period?.end}`}
-        report={data.summary}
-        coverage={data.coverage}
-        error={errors.summary || errors.coverage}
-        onInvestigate={investigate}
-        loading={loading.summary || loading.coverage}
-      />
+      <details
+        className="panel supporting"
+        onToggle={(event) => setShowReports(event.currentTarget.open)}
+      >
+        <summary>Supporting analytics and metric definitions</summary>
+        {showReports && (
+          <>
+            {period && (
+              <Findings
+                summary={data.summary}
+                investigation={data.investigation}
+                performance={data.performance}
+                onInvestigate={investigate}
+                error={
+                  errors.summary || errors.investigation || errors.performance
+                }
+              />
+            )}
+            <SessionOverview
+              key={`sessions-${period?.start}-${period?.end}`}
+              report={data.summary}
+              coverage={data.coverage}
+              error={errors.summary || errors.coverage}
+              onInvestigate={investigate}
+              loading={loading.summary || loading.coverage}
+            />
 
-      <Investigation
-        report={data.investigation}
-        error={errors.investigation}
-        loading={loading.investigation}
-      />
-      <Performance
-        report={data.performance}
-        error={errors.performance}
-        loading={loading.performance}
-      />
-      <MonthlyComparison report={data.performance} />
-      <DataGuide />
+            <Investigation
+              report={data.investigation}
+              error={errors.investigation}
+              loading={loading.investigation}
+            />
+            <Performance
+              report={data.performance}
+              error={errors.performance}
+              loading={loading.performance}
+            />
+            <MonthlyComparison report={data.performance} />
+            <DataGuide />
+          </>
+        )}
+      </details>
       <footer>
         <p>
           <a href="#period">Back to date selection</a>

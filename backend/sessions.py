@@ -2,12 +2,15 @@ from uuid import UUID
 from math import isfinite
 
 import psycopg
+from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from backend import repository
 from logic.sessions import FILTERS, SORTS, enrich_session, page_number
 from logic.summary import date_window
+from logic.session_links import session_url
+from logic.issues import FPS_REVIEW_THRESHOLD
 
 PAGE_SIZE = 25
 
@@ -28,6 +31,9 @@ def session_list(request, params):
     if category not in FILTERS or sort not in SORTS:
         raise ValueError("Choose a supported filter and sort order.")
     params.update({"phase": request.GET.get("phase", ""), "stage": request.GET.get("stage", "")})
+    params["error_code"] = request.GET.get("error_code", "")
+    if len(params["error_code"]) > 100:
+        raise ValueError("Invalid error code.")
     fps_below = request.GET.get("fps_below", "").strip()
     params["fps_below"] = float(fps_below) if fps_below else None
     if params["fps_below"] is not None and (not isfinite(params["fps_below"]) or params["fps_below"] < 0):
@@ -38,10 +44,14 @@ def session_list(request, params):
     params.update({"limit": PAGE_SIZE, "offset": (page - 1) * PAGE_SIZE})
     # Only server-owned expressions enter SQL; all reader-entered values stay bound parameters.
     sql = repository.QUERIES["session_list"].replace("{filter}", FILTERS[category]).replace("{sort}", SORTS[sort])
+    sql = sql.replace("{fps_sessions}", repository.QUERIES["fps_issue_sessions"].rstrip(";"))
+    params["fps_threshold"] = FPS_REVIEW_THRESHOLD
     sql = sql.replace("{performance_filter}", repository.QUERIES["session_fps_filter"].rstrip(";") if fps_below else "TRUE")
     rows = repository.execute(sql, params)
     total = rows[0]["total"] if rows else 0
     items = [enrich_session(row["item"]) for row in rows if row["item"]]
+    for item in items:
+        item["website_url"] = session_url(settings.GAMEARENA_SESSION_URL, item["session_id"])
     if items:
         metrics = repository.query("session_page_metrics", {**params, "session_ids": [UUID(str(item["session_id"])) for item in items]})
         by_session = {}
@@ -49,7 +59,8 @@ def session_list(request, params):
             by_session.setdefault(str(metric["session_id"]), {})[metric["metric"]] = metric["mean"]
         for item in items:
             item["metrics"] = by_session.get(str(item["session_id"]), {})
-    return {"items": items, "total": total, "page": page, "page_size": PAGE_SIZE}
+    return {"items": items, "total": total, "page": page, "page_size": PAGE_SIZE,
+            "website_configured": session_url(settings.GAMEARENA_SESSION_URL, UUID(int=0)) is not None}
 
 
 def session_detail(request, params, session_id):

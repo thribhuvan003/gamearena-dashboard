@@ -15,6 +15,8 @@ FILTERS = {
     "repeat_reconnect": "reconnects > 1",
     "disconnected": "disconnects > 0",
     "ws_error": "ws_errors > 0",
+    "error": "errors > 0",
+    "low_fps": "session_id IN ({fps_sessions})",
     "repeated_attempts": "attempts > 1",
     "missing_stats": "batches = 0",
     "measured": "batches > 0",

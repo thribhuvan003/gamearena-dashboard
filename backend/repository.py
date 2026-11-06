@@ -22,6 +22,7 @@ for sql_file in sorted(SQL.glob("*.sql")):
 
 for name in QUERIES:
     QUERIES[name] = QUERIES[name].replace("{session_rows}", QUERIES["session_rows"].rstrip(";")).replace("{session_numbers}", QUERIES["session_numbers"].rstrip(";"))
+    QUERIES[name] = QUERIES[name].replace("{fps_issue_sessions}", QUERIES["fps_issue_sessions"].rstrip(";"))
 
 
 
