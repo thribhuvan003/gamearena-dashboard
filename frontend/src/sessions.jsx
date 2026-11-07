@@ -169,21 +169,26 @@ export function SessionExplorer({ period, selection, revision }) {
               <article className="panel" key={group.category}>
                 <h3>{group.title}</h3>
                 <p>
+                  <strong>What this means:</strong> {group.meaning}
+                </p>
+                <p>
                   <strong className="big-number">
                     {number(group.sessions)}
                   </strong>{" "}
                   sessions ·{" "}
                   {group.share == null
                     ? "No observations"
-                    : number(group.share, 1) + "%"}
+                    : number(group.share, 1) + "% of all observed sessions"}
                 </p>
                 {group.events != null && (
                   <p>
-                    {number(group.events)} recorded events within these
-                    sessions.
+                    {number(group.events)} matching events. One session can
+                    record several events.
                   </p>
                 )}
-                <p>{group.explanation}</p>
+                <p>
+                  <strong>What to check:</strong> {group.explanation}
+                </p>
                 <button
                   disabled={!group.sessions}
                   onClick={() => openGroup(group)}

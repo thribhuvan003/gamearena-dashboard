@@ -14,14 +14,14 @@ def issues(request):
     # Aggregate the same classified session rows that the drill-down uses.
     try:
         window = date_window(request.GET.get("start", ""), request.GET.get("end", ""))
-        key = f"issue-groups:v1:{window['start'].isoformat()}:{window['end'].isoformat()}"
+        key = f"issue-groups:v2:{window['start'].isoformat()}:{window['end'].isoformat()}"
         result = None if request.GET.get("refresh") == "1" else cache.get(key)
         if result is not None:
             response = JsonResponse(result)
             response["Cache-Control"] = "no-store"
             return response
         columns = ["COUNT(*) AS total"]
-        for category, _, event_column, _ in ISSUES:
+        for category, _, event_column, _, _ in ISSUES:
             predicate = FILTERS[category]
             columns.append(f"COUNT(*) FILTER (WHERE {predicate}) AS {category}")
             if event_column:
@@ -32,8 +32,9 @@ def issues(request):
                   "stages": repository.query("failures", window),
                   "codes": repository.query("issue_codes", window)}
         fps = repository.query("fps_issue_count", {**window, "fps_threshold": FPS_REVIEW_THRESHOLD})[0]
-        result["groups"].append({"category": "low_fps", "title": f"FPS readings below {FPS_REVIEW_THRESHOLD}",
+        result["groups"].append({"category": "low_fps", "title": f"Sessions with readings below {FPS_REVIEW_THRESHOLD} FPS",
                                  "sessions": fps["sessions"], "share": percent(fps["sessions"], counts["total"]),
+                                 "meaning": f"FPS means frames per second: how many image frames are recorded each second. At least one valid reading in this session was below {FPS_REVIEW_THRESHOLD} FPS; it may have been a brief dip.",
                                  "events": None, "explanation": f"At least one valid frame-rate sample was below {FPS_REVIEW_THRESHOLD} FPS. This is an investigation threshold, not proof that the entire session was poor."})
         result["groups"].sort(key=lambda group: (-group["sessions"], group["category"]))
         # Only grouped counts are cached locally; individual session evidence is not cached.

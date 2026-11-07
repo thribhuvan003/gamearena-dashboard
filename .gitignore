@@ -14,3 +14,16 @@ __pycache__/
 *.pem
 *.key
 outputs/
+data/
+telemetry/
+backups/
+exports/
+*.dump
+*.backup
+*.parquet
+*.jsonl
+*.ndjson
+*.tsv
+*.sqlite
+*.sqlite3
+*.db
