@@ -1,223 +1,178 @@
-import { getReport } from "./api";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { SessionExplorer } from "./sessions";
-import { Findings } from "./findings";
-import {
-  DataGuide,
-  Investigation,
-  MonthlyComparison,
-  Notice,
-  Performance,
-  SessionOverview,
-  dateLabel,
-} from "./sections";
+import { getReport } from "./api";
+import { DailyImpact } from "./impact";
+import { Notice, dateLabel, utcTime } from "./format";
 import "./style.css";
 
-// Independent report requests let each section appear as soon as its data is ready.
-const reports = ["summary", "coverage", "performance", "investigation"];
+// Open on the latest complete day: a day that is still filling in makes every number look low.
+function latestDay(range) {
+  const complete =
+    new Date(range.last_seen) >= new Date(`${range.end}T23:00:00Z`);
+  if (complete || range.start === range.end) return range.end;
+  const day = new Date(`${range.end}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - 1);
+  return day.toISOString().slice(0, 10);
+}
+
+// The cards show what the processor last saved, so say how fresh that is.
+function Processed({ range }) {
+  if (!range?.end) return null;
+  const processed = range.processed;
+  if (!processed?.finished_at)
+    return (
+      <p className="notice">
+        The numbers haven't been prepared yet. Run process.cmd, then refresh.
+      </p>
+    );
+  return (
+    <p className={processed.behind ? "notice" : undefined}>
+      Numbers last updated {utcTime(processed.finished_at)} UTC.
+      {processed.behind &&
+        " New data has arrived since; the next update includes it."}
+    </p>
+  );
+}
 
 function App() {
-  // Range means dates in storage. Period means the dates selected on screen.
-  const [showReports, setShowReports] = useState(false);
-  const [selection, setSelection] = useState(null);
-  function investigate(filters) {
-    setSelection(filters);
-    requestAnimationFrame(() =>
-      document
-        .getElementById("session-explorer")
-        ?.scrollIntoView({ behavior: "smooth" }),
-    );
-  }
   const [range, setRange] = useState(null);
   const [period, setPeriod] = useState(null);
-  const [preset, setPreset] = useState("all");
+  const [preset, setPreset] = useState("day");
   const [revision, setRevision] = useState(0);
-  const [data, setData] = useState({});
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState({ range: true });
-  const dateForm = useRef(null);
-  const lastRefresh = useRef(0);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  // Discover the stored period instead of hard-coding the dates from this backup.
   useEffect(() => {
     const controller = new AbortController();
     getReport("range", {}, controller.signal)
-      .then((result) => {
-        setRange(result);
-        if (result.start && result.end)
-          setPeriod({ start: result.start, end: result.end });
+      .then((data) => {
+        setRange(data);
+        if (data.end) {
+          const day = latestDay(data);
+          setPeriod({ start: day, end: day });
+        }
       })
       .catch((error) => {
-        if (error.name !== "AbortError") setErrors({ range: error.message });
+        if (!controller.signal.aborted) setError(error.message);
       })
       .finally(() => {
-        if (!controller.signal.aborted)
-          setLoading((previous) => ({ ...previous, range: false }));
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
   }, []);
 
-  // Load panels independently. Cancel old requests when the user chooses different dates.
-  useEffect(() => {
-    if (!period || !showReports) {
-      setLoading((previous) => ({ range: previous.range }));
-      return;
-    }
-    const controller = new AbortController();
-    const fresh = revision !== lastRefresh.current;
-    lastRefresh.current = revision;
-    setData({});
-    setErrors({});
-    setLoading(Object.fromEntries(reports.map((name) => [name, true])));
-    for (const name of reports) {
-      getReport(
-        name,
-        { ...period, refresh: fresh ? "1" : "0" },
-        controller.signal,
-      )
-        .then((result) => {
-          if (!controller.signal.aborted)
-            setData((previous) => ({ ...previous, [name]: result }));
-        })
-        .catch((error) => {
-          if (!controller.signal.aborted && error.name !== "AbortError") {
-            setErrors((previous) => ({ ...previous, [name]: error.message }));
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted)
-            setLoading((previous) => ({ ...previous, [name]: false }));
-        });
-    }
-    return () => controller.abort();
-  }, [period, revision, showReports]);
-
-  const busy = Object.values(loading).some(Boolean);
-  const periodText = period
-    ? `${dateLabel(period.start)} to ${dateLabel(period.end)}`
-    : "Available data";
-
-  // Reset unfinished edits too, including when a preset selects the already-applied dates.
-  function choosePeriod(next, selectedPreset = "custom") {
-    dateForm.current?.reset();
-    setPreset(selectedPreset);
+  function choose(next, selected) {
+    setError("");
+    setPreset(selected);
     setPeriod({ start: next.start, end: next.end });
   }
 
-  // Keep the current report if the entered start date is after the end date.
-  function applyPeriod(event) {
+  function apply(event) {
     event.preventDefault();
     const dates = Object.fromEntries(new FormData(event.currentTarget));
     if (dates.start > dates.end) {
-      setErrors((previous) => ({
-        ...previous,
-        range: "Choose a start date on or before the end date.",
-      }));
+      setError("Start date is after end date.");
       return;
     }
-    choosePeriod(dates);
+    choose(dates, "custom");
   }
 
-  // Python supplies the 30-day boundary, so all date rules stay in the logic folder.
-  function recentPeriod() {
-    choosePeriod({ start: range.recent_start, end: range.end }, "recent");
-  }
-
-  // Refresh follows the selected preset after an import; a custom date range is preserved.
   async function refresh() {
-    setLoading((previous) => ({ ...previous, range: true }));
+    setLoading(true);
+    setError("");
     try {
       const next = await getReport("range");
       setRange(next);
-      // A successful connection clears an earlier range error, including for an empty database.
-      setErrors((previous) => {
-        const remaining = { ...previous };
-        delete remaining.range;
-        return remaining;
-      });
-      if (next.start && next.end) {
-        if (preset === "recent")
-          choosePeriod({ start: next.recent_start, end: next.end }, "recent");
-        else if (preset === "all" || !period) choosePeriod(next, "all");
-      } else {
-        setPeriod(null);
-        setData({});
-        setErrors({});
-        setPreset("all");
-        setLoading({ range: false });
-      }
+      if (!next.end) setPeriod(null);
+      else if (preset === "day") {
+        const day = latestDay(next);
+        setPeriod({ start: day, end: day });
+      } else if (preset === "all")
+        setPeriod({ start: next.start, end: next.end });
+      else if (preset === "recent")
+        setPeriod({ start: next.recent_start, end: next.end });
       setRevision((value) => value + 1);
     } catch (error) {
-      setErrors((previous) => ({ ...previous, range: error.message }));
+      setError(error.message);
     } finally {
-      setLoading((previous) => ({ ...previous, range: false }));
+      setLoading(false);
     }
   }
 
-  // Display sections contain no counting rules. SQL and Python own those calculations.
   return (
     <main className="dashboard">
       <header className="page-header">
-        <div>
-          <p className="eyebrow">GameArena · Product analytics</p>
-          <h1>Find issues. Open the affected sessions.</h1>
-          <p>
-            Grouped connection problems and errors, with the sessions behind
-            each — explained in plain language.
-          </p>
-        </div>
-        <span className="local-badge">Local, read-only data</span>
-      </header>
-      <nav className="page-nav" aria-label="Dashboard sections">
-        <a href="#session-explorer">Issue groups</a>
-        <a href="#period">Change period</a>
-      </nav>
-      <section id="period" className="period-panel" aria-label="Report period">
-        <h2>Selected period</h2>
-        <p className="selected-period">{periodText}</p>
-        <p>Both dates are included. All report dates use UTC.</p>
-        <div className="preset-buttons">
-          <button
-            aria-pressed={preset === "all"}
-            disabled={loading.range || !range?.start}
-            onClick={() => choosePeriod(range, "all")}
-          >
-            All data
-          </button>
-          <button
-            aria-pressed={preset === "recent"}
-            disabled={loading.range || !range?.recent_start}
-            onClick={recentPeriod}
-          >
-            Latest 30 days
-          </button>
-          <button disabled={busy} onClick={refresh}>
+        <h1>GameArena insights</h1>
+        {/* Refresh re-reads the database for the whole page, so it sits with the page title. */}
+        <div className="header-actions">
+          <span className="local-badge">Local data · times in UTC</span>
+          <button disabled={loading} onClick={refresh}>
             Refresh data
           </button>
         </div>
-        {preset === "recent" && range?.end && (
-          <p className="caption">
-            Latest 30 days ends on the last stored date:{" "}
-            <strong>{dateLabel(range.end)}</strong>. It does not use today's
-            date.
+      </header>
+      <section className="period-panel" aria-label="Report period">
+        <div className="preset-buttons">
+          <label className="day-selector">
+            Day (UTC)
+            <input
+              aria-label="Selected day"
+              type="date"
+              disabled={loading}
+              value={period?.end || ""}
+              onChange={(event) => {
+                if (event.target.value)
+                  choose(
+                    { start: event.target.value, end: event.target.value },
+                    "day",
+                  );
+              }}
+            />
+          </label>
+        </div>
+        {period && period.start !== period.end && (
+          <p>
+            {dateLabel(period.start)} – {dateLabel(period.end)}
           </p>
         )}
-        {/* Keep presets quick to use; open custom fields only when they are needed. */}
+        {period?.end === range?.end && range?.last_seen && (
+          <p>
+            Data until{" "}
+            {new Date(range.last_seen).toLocaleTimeString("en-GB", {
+              timeZone: "UTC",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}{" "}
+            UTC on {dateLabel(range.end)}.
+          </p>
+        )}
         <details className="custom-dates">
-          <summary>Choose custom dates</summary>
+          <summary>Choose a date range</summary>
+          <div className="preset-buttons">
+            <button
+              disabled={!range?.start || loading}
+              onClick={() => choose(range, "all")}
+            >
+              All data
+            </button>
+            <button
+              disabled={!range?.recent_start || loading}
+              onClick={() =>
+                choose({ start: range.recent_start, end: range.end }, "recent")
+              }
+            >
+              Latest 30 stored days
+            </button>
+          </div>
           <form
-            ref={dateForm}
-            key={`${period?.start}-${period?.end}`}
-            onSubmit={applyPeriod}
             className="date-form"
+            key={period?.start + "-" + period?.end}
+            onSubmit={apply}
           >
             <label>
               From
               <input
-                aria-label="Start date"
                 name="start"
-                disabled={loading.range}
                 type="date"
                 required
                 defaultValue={period?.start || ""}
@@ -226,98 +181,26 @@ function App() {
             <label>
               To
               <input
-                aria-label="End date"
                 name="end"
-                disabled={loading.range}
                 type="date"
                 required
                 defaultValue={period?.end || ""}
               />
             </label>
-            <button
-              className="primary"
-              disabled={loading.range || !range?.start}
-              type="submit"
-            >
+            <button type="submit" disabled={loading}>
               Apply dates
             </button>
           </form>
         </details>
-        <Notice error={errors.range} loading={loading.range}>
-          Reading the available dates…
+        <Processed range={range} />
+        <Notice error={error} loading={loading}>
+          Reading available dates…
         </Notice>
-        {period && (
-          <p className="report-status" role="status">
-            {busy
-              ? "Updating the selected period. Sections fill in as they finish."
-              : Object.keys(errors).length
-                ? "Some sections need attention. Check the message and select Refresh data to retry."
-                : "Selected dates applied."}
-          </p>
-        )}
-        {range && !range.start && (
-          <p className="notice">
-            No telemetry is stored yet. Import compatible data, then select
-            Refresh data.
-          </p>
+        {range && !range.end && (
+          <p>No telemetry stored yet. Import the data, then refresh.</p>
         )}
       </section>
-      {period && (
-        <SessionExplorer
-          period={period}
-          selection={selection}
-          revision={revision}
-        />
-      )}
-      <details
-        className="panel supporting"
-        onToggle={(event) => setShowReports(event.currentTarget.open)}
-      >
-        <summary>Supporting analytics and metric definitions</summary>
-        {showReports && (
-          <>
-            {period && (
-              <Findings
-                summary={data.summary}
-                investigation={data.investigation}
-                performance={data.performance}
-                onInvestigate={investigate}
-                error={
-                  errors.summary || errors.investigation || errors.performance
-                }
-              />
-            )}
-            <SessionOverview
-              key={`sessions-${period?.start}-${period?.end}`}
-              report={data.summary}
-              coverage={data.coverage}
-              error={errors.summary || errors.coverage}
-              onInvestigate={investigate}
-              loading={loading.summary || loading.coverage}
-            />
-
-            <Investigation
-              report={data.investigation}
-              error={errors.investigation}
-              loading={loading.investigation}
-            />
-            <Performance
-              report={data.performance}
-              error={errors.performance}
-              loading={loading.performance}
-            />
-            <MonthlyComparison report={data.performance} />
-            <DataGuide />
-          </>
-        )}
-      </details>
-      <footer>
-        <p>
-          <a href="#period">Back to date selection</a>
-        </p>
-        GameArena · Local session investigation. Summaries are cached; select
-        Refresh data after importing records.
-      </footer>
+      {period && <DailyImpact period={period} revision={revision} />}
     </main>
   );
 }
