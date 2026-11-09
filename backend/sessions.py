@@ -1,20 +1,16 @@
-from uuid import UUID
-from math import isfinite
-
 import psycopg
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-from backend import repository
-from logic.sessions import FILTERS, SORTS, enrich_session, page_number
-from logic.summary import date_window
-from logic.issues import FPS_REVIEW_THRESHOLD
+from database import repository
+from logic.dates import date_window, page_number
+from logic.rules import enrich_session
 
-PAGE_SIZE = 25
+PAGE_SIZE = 50
 
 
 def selection(request):
-    # Limit ID searches to literal ID characters; dates use the same UTC rules as reports.
+    # Session IDs are lowercase UUIDs, so a search may only contain those characters.
     params = date_window(request.GET.get("start", ""), request.GET.get("end", ""))
     params["search"] = request.GET.get("search", "").strip().lower()
     if len(params["search"]) > 36 or any(c not in "0123456789abcdef-" for c in params["search"]):
@@ -22,102 +18,60 @@ def selection(request):
     return params
 
 
-def session_list(request, params):
-    # Count and paginate the same classified rows so a finding matches its session list.
-    category = request.GET.get("category", "all")
-    sort = request.GET.get("sort", "newest")
-    if category not in FILTERS or sort not in SORTS:
-        raise ValueError("Choose a supported filter and sort order.")
-    params.update({"phase": request.GET.get("phase", ""), "stage": request.GET.get("stage", "")})
-    params["error_code"] = request.GET.get("error_code", "")
-    if len(params["error_code"]) > 100:
-        raise ValueError("Invalid error code.")
-    fps_below = request.GET.get("fps_below", "").strip()
-    params["fps_below"] = float(fps_below) if fps_below else None
-    if params["fps_below"] is not None and (not isfinite(params["fps_below"]) or params["fps_below"] < 0):
-        raise ValueError("Invalid FPS threshold.")
-    if len(params["phase"]) > 80 or len(params["stage"]) > 80:
-        raise ValueError("Invalid failure stage.")
+def paged(request, name, params):
+    # The query returns the total on every row, and one empty row when the page is past the end.
     page = page_number(request.GET.get("page", "1"))
-    params.update({"limit": PAGE_SIZE, "offset": (page - 1) * PAGE_SIZE})
-    # Only server-owned expressions enter SQL; all reader-entered values stay bound parameters.
-    sql = repository.QUERIES["session_list"].replace("{filter}", FILTERS[category]).replace("{sort}", SORTS[sort])
-    sql = sql.replace("{fps_sessions}", repository.QUERIES["fps_issue_sessions"].rstrip(";"))
-    params["fps_threshold"] = FPS_REVIEW_THRESHOLD
-    sql = sql.replace("{performance_filter}", repository.QUERIES["session_fps_filter"].rstrip(";") if fps_below else "TRUE")
-    rows = repository.execute(sql, params)
-    total = rows[0]["total"] if rows else 0
-    items = [enrich_session(row["item"]) for row in rows if row["item"]]
-    if items:
-        metrics = repository.query("session_page_metrics", {**params, "session_ids": [UUID(str(item["session_id"])) for item in items]})
-        by_session = {}
-        for metric in metrics:
-            by_session.setdefault(str(metric["session_id"]), {})[metric["metric"]] = metric["mean"]
-        for item in items:
-            item["metrics"] = by_session.get(str(item["session_id"]), {})
-    return {"items": items, "total": total, "page": page, "page_size": PAGE_SIZE}
+    rows = repository.query(name, {**params, "limit": PAGE_SIZE, "offset": (page - 1) * PAGE_SIZE})
+    return {"items": [row["item"] for row in rows if row["item"]],
+            "total": rows[0]["total"], "page": page, "page_size": PAGE_SIZE}
 
 
-def session_detail(request, params, session_id):
-    # Return approved diagnostics and aggregates rather than arbitrary payload contents.
-    params["session_id"] = session_id
+def session_detail(params):
     rows = repository.query("session_detail", params)
     if not rows:
         return None
-    return {"session": enrich_session(rows[0]),
+    try:
+        stored = next(iter(repository.query("session_tags", params)), None)
+    except psycopg.errors.UndefinedTable:
+        stored = None
+    return {"session": enrich_session(rows[0], stored),
             "connections": repository.query("session_connections", params),
-            "metrics": repository.query("session_metrics", params),
-            "devices": "Not recorded in the approved session mapping"}
+            "metrics": repository.query("session_metrics", params)}
 
 
-def session_events(request, params, session_id):
-    # Keep repeat events: their order is needed to investigate attempts and recovery.
-    params.update({"session_id": session_id, "source": request.GET.get("source", ""),
-                   "level": request.GET.get("level", ""), "connection": request.GET.get("connection", "")})
-    if any(len(params[key]) > 100 for key in ("source", "level", "connection")):
+def session_events(request, params):
+    filters = {key: request.GET.get(key, "") for key in ("source", "level", "connection")}
+    if any(len(value) > 100 for value in filters.values()):
         raise ValueError("Invalid event filter.")
-    page = page_number(request.GET.get("page", "1"))
-    params.update({"limit": 50, "offset": (page - 1) * 50})
-    rows = repository.query("session_events", params)
-    return {"items": [row["item"] for row in rows if row["item"]],
-            "total": rows[0]["total"], "page": page, "page_size": 50}
+    return paged(request, "session_events", {**params, **filters})
 
 
 @require_GET
-def sessions(request, session_id=None, section=None):
-    # All session views share one scope, including the optional full recorded history.
+def sessions(request, session_id, section=None):
     try:
         if section not in {None, "events", "buckets"}:
-            return JsonResponse({"error": "This session report does not exist."}, status=404)
-        params = selection(request)
-        if session_id is not None and request.GET.get("whole") == "1":
+            return JsonResponse({"error": "Unknown session section."}, status=404)
+        params = {**selection(request), "session_id": session_id}
+        # "Whole session" replaces the selected dates with the session's own first and last day.
+        if request.GET.get("whole") == "1":
             dates = repository.query("session_range", {"session_id": session_id})[0]
             if not dates["start"]:
                 return JsonResponse({"error": "No recorded history for this session."}, status=404)
             params.update(date_window(str(dates["start"]), str(dates["end"])))
-        if session_id is None:
-            data = session_list(request, params)
-        elif section == "events":
-            data = session_events(request, params, session_id)
+        if section == "events":
+            data = session_events(request, params)
         elif section == "buckets":
-            params["session_id"] = session_id
-            page = page_number(request.GET.get("page", "1"))
-            params.update({"limit": 50, "offset": (page - 1) * 50})
-            rows = repository.query("session_buckets", params)
-            data = {"items": [row["item"] for row in rows if row["item"]],
-                    "total": rows[0]["total"], "page": page, "page_size": 50}
+            data = paged(request, "session_buckets", params)
         else:
-            data = session_detail(request, params, session_id)
+            data = session_detail(params)
         if data is None:
             return JsonResponse({"error": "No session events in these dates."}, status=404)
         response = JsonResponse(data)
-        # Session evidence is private and should not remain in browser or proxy caches.
         response["Cache-Control"] = "no-store"
         return response
     except (ValueError, OverflowError):
-        return JsonResponse({"error": "Check the dates, session search and selected filters."}, status=400)
+        return JsonResponse({"error": "Invalid dates, search or filter."}, status=400)
     except psycopg.errors.QueryCanceled:
-        return JsonResponse({"error": "This investigation took too long. Choose a shorter period."}, status=504)
+        return JsonResponse({"error": "Query timed out. Choose a shorter date range."}, status=504)
     except psycopg.Error:
-        return JsonResponse({"error": "Session evidence is unavailable. Check the local database and retry."}, status=503)
-
+        return JsonResponse({"error": "Database unavailable."}, status=503)

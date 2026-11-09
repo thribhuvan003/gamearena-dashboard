@@ -1,9 +1,6 @@
-"""Serve the dashboard and its summaries on the local laptop."""
+"""Django settings for the local dashboard."""
 import os
-from pathlib import Path
 
-# This app is for the laptop's local browser. Database access stays in Python.
-ROOT = Path(__file__).resolve().parents[1]
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "gamearena-local-dashboard")
 DEBUG = False
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
@@ -13,11 +10,3 @@ MIDDLEWARE = ["django.middleware.security.SecurityMiddleware", "django.middlewar
 USE_TZ = True
 TIME_ZONE = "UTC"
 DEFAULT_CHARSET = "utf-8"
-
-
-# Save only aggregate results locally, so restarting VS Code does not repeat every sample scan.
-CACHES = {"default": {
-    "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
-    "LOCATION": ROOT / ".cache",
-    "TIMEOUT": 300,
-}}

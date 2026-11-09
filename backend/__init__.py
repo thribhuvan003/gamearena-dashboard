@@ -1,1 +1,1 @@
-"""Django routes, settings and read-only database access."""
+"""Django settings, URLs and views. The website only reads data."""
