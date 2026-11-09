@@ -82,6 +82,10 @@ SELECT session_id, day, COUNT(*) AS events, MIN(recorded_at) AS first_seen,
     COUNT(*) FILTER (WHERE event_type = 'client_reconnected') AS reconnects,
     COUNT(*) FILTER (WHERE event_type = 'ws_error') AS channel_errors,
     COUNT(*) FILTER (WHERE event_type = 'session_ended') AS ends,
+    -- How it ended. Only these three fixed values are read.
+    COUNT(*) FILTER (WHERE payload->>'end_reason' = 'Device deleted') AS device_deleted_ends,
+    COUNT(*) FILTER (WHERE payload->>'end_reason' = 'Not in use') AS not_in_use_ends,
+    COUNT(*) FILTER (WHERE payload->>'end_reason' = 'Ended by user') AS user_ends,
     -- Who joined. Only these fixed values are read; free-text fields such as messages never are.
     COUNT(*) FILTER (WHERE payload->>'mode' = 'owner') AS owner_joins,
     COUNT(*) FILTER (WHERE payload->>'mode' = 'share') AS share_joins,

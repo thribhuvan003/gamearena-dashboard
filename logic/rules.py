@@ -66,6 +66,12 @@ DEFINITIONS = {
     "owner": ("Owner joined", "The owner of the host joined the session."),
     "share_link": ("Joined by share link", "Someone joined through a share link."),
     "external_user": ("External user joined", "An external user joined the session."),
+    "ended_device_deleted": (
+        "Ended: device deleted",
+        "The cloud gaming server was removed, by the provider or during a test. Not an error in the session.",
+    ),
+    "ended_not_in_use": ("Ended: not in use", "The session was closed because it was not being used."),
+    "ended_by_user": ("Ended by the user", "The user ended the session."),
 }
 
 # Error events, in plain words. Only these become tags, so the tag list cannot grow on its own.
@@ -96,11 +102,12 @@ for stage in STAGES:
 # How the filter panel groups the tags. Every tag is in exactly one section.
 SECTIONS = {
     "Connection": ("tried", "connected", "no_success", "failure", "later_success", "no_later_success",
-                   "failure_after_end", "repeated_attempts", "ready", "reconnected", "channel_errors", "no_end"),
+                   "failure_after_end", "repeated_attempts", "ready", "reconnected", "channel_errors"),
     "Stream quality": ("measured", "missing_stats", "connected_no_stats", "stats_only", "fps", "low_fps",
                        "any_low_fps", "stream_drops", "high_skip"),
     "Error type": tuple(key for key, _, _ in ERROR_TYPES.values()),
     "Error stage": tuple("stage_" + stage.lower() for stage in STAGES),
+    "How it ended": ("ended_device_deleted", "ended_not_in_use", "ended_by_user", "no_end"),
     "Who joined": ("owner", "share_link", "external_user"),
 }
 
@@ -108,7 +115,8 @@ SECTIONS = {
 COUNTS = ("events", "attempts", "failures", "failures_after_end", "batches",
           "streamed_seconds", "low_fps_seconds", "fps_sum", "fps_valid",
           "host_connects", "client_connects", "webrtc_failures", "stream_drops", "high_skip_seconds",
-          "reconnects", "channel_errors", "ends", "owner_joins", "share_joins", "external_joins")
+          "reconnects", "channel_errors", "ends", "owner_joins", "share_joins", "external_joins",
+          "device_deleted_ends", "not_in_use_ends", "user_ends")
 
 
 def combine_sessions(days):
@@ -223,6 +231,9 @@ def groups(row):
         "owner": row["owner_joins"] > 0,
         "share_link": row["share_joins"] > 0,
         "external_user": row["external_joins"] > 0,
+        "ended_device_deleted": row["device_deleted_ends"] > 0,
+        "ended_not_in_use": row["not_in_use_ends"] > 0,
+        "ended_by_user": row["user_ends"] > 0,
         **{key: name in errors for name, (key, _, _) in ERROR_TYPES.items()},
         **{"stage_" + stage.lower(): stage in stages for stage in STAGES},
     }

@@ -85,6 +85,11 @@ ERRORS = f"""SELECT COUNT(DISTINCT session_id) FROM session_telemetry_events e
     WHERE level = 'error' AND {DAYS} AND {NOT_STALE} AND payload->>%(field)s = %(value)s"""
 
 
+ENDS = f"""SELECT COUNT(DISTINCT session_id) FROM session_telemetry_events
+    WHERE event_type = 'session_ended' AND payload->>'end_reason' = %(value)s AND {DAYS}"""
+END_TAGS = {"ended_device_deleted": "Device deleted", "ended_not_in_use": "Not in use", "ended_by_user": "Ended by user"}
+
+
 def nearest_rank(values, share):
     values = sorted(values)
     return values[max(math.ceil(share * len(values)) - 1, 0)] if values else None
@@ -104,6 +109,7 @@ def main():
         waits = [next(iter(row.values())) for row in connection.execute(WAITS, params).fetchall()]
         errors = {key: one(ERRORS, field="event", value=name) for name, (key, _, _) in ERROR_TYPES.items()}
         errors |= {"stage_" + stage.lower(): one(ERRORS, field="stage", value=stage) for stage in STAGES}
+        errors |= {key: one(ENDS, value=reason) for key, reason in END_TAGS.items()}
 
     client = Client()
     data = client.get("/api/impact/", {"start": start, "end": end}).json()

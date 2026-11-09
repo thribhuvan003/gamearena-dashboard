@@ -144,6 +144,11 @@ class RuleTests(unittest.TestCase):
         odd = session(error_types=["something.new"], error_stages=["Somewhere"])
         self.assertFalse(any(tag.startswith(("error_", "stage_")) for tag in tags(odd)))
 
+    def test_how_a_session_ended_is_its_own_tag(self):
+        self.assertIn("ended_device_deleted", tags(session(ends=1, device_deleted_ends=1)))
+        self.assertNotIn("no_end", tags(session(ends=1, device_deleted_ends=1)))
+        self.assertIn("no_end", tags(session()))
+
     def test_tags_are_the_card_rules(self):
         found = tags(session(attempts=2, failures=1, last_failure=START, reconnects=1, owner_joins=1))
         for tag in ("tried", "failure", "no_later_success", "no_success", "repeated_attempts",
