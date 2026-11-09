@@ -6,4 +6,4 @@ if not exist .venv\Scripts\python.exe (
     echo Run setup.cmd first.
     exit /b 1
 )
-.venv\Scripts\python testserify_numbers.py %*
+.venv\Scripts\python tests\verify_numbers.py %*
