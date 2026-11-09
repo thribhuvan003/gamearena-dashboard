@@ -1,1 +1,1 @@
-"""Date and measurement rules used by the report endpoints."""
+"""Calculation rules with no Django or database code."""
