@@ -6,7 +6,7 @@ if not exist .venv\Scripts\python.exe (
     exit /b 1
 )
 echo Checking Django settings...
-.venv\Scripts\python backend\manage.py check
+.venv\Scripts\python manage.py check
 if errorlevel 1 exit /b 1
 echo Running calculation and API tests...
 .venv\Scripts\python -m unittest discover -s tests -v

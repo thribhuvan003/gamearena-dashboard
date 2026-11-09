@@ -13,7 +13,7 @@ if not errorlevel 1 (
     start "" "http://127.0.0.1:8000/"
     exit /b 0
 )
-rem SQL reads the totals, logic combines them, Django serves them, and React shows them.
+rem The processor tags sessions, Django serves the stored results, and React shows them.
 rem Keep one local server for both the dashboard page and its summaries.
 if not exist .venv\Scripts\python.exe (
     call setup.cmd
@@ -22,5 +22,10 @@ if not exist .venv\Scripts\python.exe (
 rem Rebuild the page so saved frontend edits are shown instead of an old build.
 call npm --prefix frontend run build
 if errorlevel 1 exit /b 1
+rem Tag anything new first, so the dashboard opens on current numbers.
+rem If that fails or another run is busy, the page still opens and says how fresh its numbers are.
+.venv\Scripts\python -m processor
+rem Keep tagging new data every 5 minutes in its own window while the dashboard is open.
+start "GameArena processor" /min .venv\Scripts\python -m processor --every 300
 echo Open http://127.0.0.1:8000 in your browser.
-.venv\Scripts\python backend\manage.py runserver 127.0.0.1:8000
+.venv\Scripts\python manage.py runserver 127.0.0.1:8000

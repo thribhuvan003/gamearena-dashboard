@@ -1,22 +1,11 @@
 {
   "files.exclude": {
     ".venv": true,
-    ".cache": true,
     "frontend/node_modules": true,
     "frontend/dist": true,
-    "frontend/package-lock.json": true,
     "**/__pycache__": true,
     "**/*.pyc": true,
-    "database/0*.sql": true,
-    "**/__init__.py": true,
-    ".vscode": true,
-    ".gitignore": true,
-    "tests": true,
-    ".git": true,
-    "logic": true,
-    "setup.cmd": true,
-    "start.cmd": true,
-    "check.cmd": true
+    ".git": true
   },
   "explorer.compactFolders": false,
   "terminal.integrated.defaultProfile.windows": "Command Prompt",
