@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useReport } from "./api";
 import { AffectedSessions } from "./affected";
-import { Notice, number } from "./format";
+import { Info, Notice, number } from "./format";
 
 // Asked for in review, but the data cannot answer them yet.
 const PENDING = [
@@ -21,14 +21,14 @@ const BREAKDOWNS = [
 ];
 
 // One small card: heading, number, one line of context and the change.
-// The definition shows on hover; clicking the number opens the sessions behind it.
+// The "i" button explains it; clicking the number opens the sessions behind it.
 function Card({ title, value, note, change, hint, selected, onOpen }) {
   return (
-    <article
-      className={"panel compact-metric" + (selected ? " selected" : "")}
-      title={hint}
-    >
-      <h3>{title}</h3>
+    <article className={"panel compact-metric" + (selected ? " selected" : "")}>
+      <h3>
+        {title}
+        {hint && <Info>{hint}</Info>}
+      </h3>
       <button
         className="metric-number"
         aria-pressed={selected}
@@ -180,7 +180,7 @@ export function DailyImpact({ period, revision }) {
       change:
         before &&
         difference(share, before.groups[key].share, percent, versus, false),
-      hint: groups[key].definition,
+      hint: `${groups[key].definition} The % is out of ${of}.`,
       selected: category === key,
       onOpen: () => open(key),
     };
@@ -229,7 +229,7 @@ export function DailyImpact({ period, revision }) {
               value={`${number(summary.ready_p50, 1)} s`}
               note={`Typical wait. 1 in 10 waited over ${number(summary.ready_p90, 1)} s`}
               change={changeOf("ready_p50", seconds, false)}
-              hint={groups.ready.definition}
+              hint="Time from connecting to the first video frame, for each session's first successful connect. Typical is the middle value: half the sessions waited less. 1 in 10 waited over is the point the slowest 10% waited past."
               selected={category === "ready"}
               onOpen={() => open("ready")}
             />
@@ -250,7 +250,7 @@ export function DailyImpact({ period, revision }) {
               title="Average FPS"
               value={number(summary.fps_mean, 1)}
               change={changeOf("fps_mean", plain, true)}
-              hint="Sum of all FPS readings divided by their count."
+              hint="Every per-second FPS reading from every session, added up and divided by how many readings there are. 30 is the idle rate."
               selected={category === "fps"}
               onOpen={() => open("fps")}
             />
@@ -260,7 +260,7 @@ export function DailyImpact({ period, revision }) {
               value={number(summary.low_fps_hours, 1) + " h"}
               note={`${number(summary.low_fps_time_share, 1)}% of streamed time`}
               change={changeOf("low_fps_time_share", percent, false)}
-              hint={groups.any_low_fps.definition}
+              hint="Seconds where some player's FPS was under 30, added up across all sessions. The % is out of all streamed time."
               selected={category === "any_low_fps"}
               onOpen={() => open("any_low_fps")}
             />

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 export function number(value, digits = 0) {
   return value == null
@@ -20,6 +20,32 @@ export function utcTime(value) {
   return value
     ? new Date(value).toLocaleString("en-GB", { timeZone: "UTC" })
     : "—";
+}
+
+// A small round "i" button. Clicking it shows what a number means and how it is worked out.
+export function Info({ children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="info">
+      <button
+        type="button"
+        className="info-button"
+        aria-label="What does this mean?"
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(!open);
+        }}
+      >
+        i
+      </button>
+      {open && (
+        <span className="info-text" role="note">
+          {children}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // Error or loading message for a request.

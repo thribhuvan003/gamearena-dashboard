@@ -318,8 +318,50 @@ tr:last-child td {
   overflow-wrap: anywhere;
 }
 .session-detail {
-  scroll-margin-top: 16px;
-  margin-top: 32px;
+  width: min(1100px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+.info {
+  display: inline;
+}
+.info-button {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  margin-left: 6px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 18px;
+  vertical-align: middle;
+}
+.info-text {
+  display: block;
+  max-width: 340px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid #c7d6bb;
+  border-radius: 8px;
+  background: #f6f9f2;
+  color: #2f3d2a;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+}
+.raw-event {
+  max-width: 520px;
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.session-detail::backdrop {
+  background: rgba(20, 32, 20, 0.45);
 }
 .tabs {
   display: flex;

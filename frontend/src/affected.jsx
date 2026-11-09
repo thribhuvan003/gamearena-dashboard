@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Pages, number, utcTime } from "./format";
+import { Info, Pages, number, utcTime } from "./format";
 import { SessionDetail } from "./sessions";
 
 // Quality lists need the stream numbers; connection lists need how far the session got.
@@ -16,6 +16,24 @@ function minutes(row, key) {
   const measured = row.batches > 0 || row.streamed_seconds > 0;
   return measured ? number(row[key] / 60, 1) + " min" : "—";
 }
+
+// What each column means, shown by its "i" button.
+const NOTES = {
+  "Session ID":
+    "The session's ID. Copy it to look the session up anywhere else.",
+  "First event": "Time of the session's first event (UTC).",
+  Streamed:
+    "Seconds the player app sent stats for, in minutes. A dash means it sent none.",
+  "Avg FPS":
+    "All of this session's per-second FPS readings, added up and divided by how many there are.",
+  "Below 30 FPS": "Minutes where FPS was under 30.",
+  Attempts: "How many times the app tried to connect.",
+  "Stream drops": "Times the video connection was lost while playing.",
+  "Skipped-frame time": "Minutes with 10 or more skipped frames in a second.",
+  "Wait until video":
+    "Time from connecting to the first video frame, for the first successful connect.",
+  Why: "Our plain-words summary of how far the session got. Open the details for the app's own message.",
+};
 
 const COLUMNS = {
   "First event": (row) => utcTime(row.first_seen),
@@ -123,6 +141,7 @@ export function AffectedSessions({
               {["Session ID", ...columns, ""].map((label) => (
                 <th key={label} scope="col">
                   {label}
+                  {NOTES[label] && <Info>{NOTES[label]}</Info>}
                 </th>
               ))}
             </tr>

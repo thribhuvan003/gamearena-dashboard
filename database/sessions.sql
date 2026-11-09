@@ -28,9 +28,12 @@ SELECT session_id,
     COUNT(*) FILTER (WHERE name = 'webrtc.connection.state' AND payload->>'prev' = 'connected'
         AND payload->>'state' IN ('disconnected', 'failed')) AS stream_drops,
     -- How it ended (e.g. "Not in use") and who joined (owner, external user, share link).
-    -- Both are short fixed values; free-text fields such as messages are never read.
+    -- Both are short fixed values.
     (array_agg(payload->>'end_reason' ORDER BY recorded_at)
         FILTER (WHERE event_type = 'session_ended'))[1] AS end_reason,
+    -- The latest connection error exactly as the app sent it, so nothing is lost in translation.
+    (array_agg(COALESCE(message, payload->>'reason') ORDER BY recorded_at DESC)
+        FILTER (WHERE name = 'pipeline.connect.failure'))[1] AS last_error_message,
     (SELECT string_agg(mode, ', ' ORDER BY mode) FROM (SELECT DISTINCT payload->>'mode' AS mode FROM events
         WHERE payload->>'mode' IS NOT NULL) modes) AS access_modes,
     (
@@ -53,9 +56,9 @@ SELECT MIN(day) AS start, MAX(day) AS end FROM (
 SELECT tags, why FROM session_analysis WHERE session_id = %(session_id)s;
 
 -- report: session_events
--- One page of a session's events in time order. Message text is never selected.
+-- One page of a session's events in time order, each with its message and fields exactly as sent.
 WITH filtered AS (
-    SELECT id, recorded_at, event_type, source, level, connection_id, connection_role,
+    SELECT id, recorded_at, event_type, source, level, connection_id, connection_role, message, payload,
         payload->>'event' AS pipeline_event, payload->>'phase' AS phase,
         payload->>'stage' AS stage,
         -- Connection errors send "code"; network route errors send "errorCode".
