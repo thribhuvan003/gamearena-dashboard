@@ -1,7 +1,8 @@
+"""Tests for the date, page and percentage helpers in shared/dates.py."""
 import unittest
 from datetime import date, datetime, timezone
 
-from logic.dates import date_window, page_number, percent, recent_start
+from shared.dates import date_window, page_number, percent, recent_start
 
 
 class DateTests(unittest.TestCase):

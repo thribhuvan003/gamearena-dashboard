@@ -1,7 +1,7 @@
 .venv/
 .cache/
-frontend/node_modules/
-frontend/dist/
+ui/node_modules/
+ui/dist/
 __pycache__/
 *.pyc
 .env

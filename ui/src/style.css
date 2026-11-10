@@ -1,0 +1,1297 @@
+/* Styles for the whole page. Chart styles live in charts.css. */
+/* One spacing scale (4 8 12 16 24 32 48) and one type scale (13 15 17 20 28 34) for the whole page;
+   the only other size is the 11px letter inside the round "i" buttons.
+   Colours are named once here and used by role. */
+:root {
+  --text: #1d2620;
+  --text-muted: #56635a;
+  --text-soft: #5f6c62;
+  --accent: #2d6845;
+  --accent-dark: #235438;
+  --accent-tint: #f4f8ef;
+  --tint-line: #c7d6bb;
+  --tint-text: #3d5e2d;
+  --link: #245a38;
+  --number: #244b1b;
+  --page: #f6f7f5;
+  --surface: #ffffff;
+  --line: #e2e6e0;
+  --line-strong: #cdd4ca;
+  --control-line: #7d8f77;
+  --hover: #f1f4ef;
+  --bar: #eef4ea;
+  --header-cell: #f3f6ef;
+  --focus: #548f35;
+  --better: #1f6b35;
+  --worse: #a3341d;
+  --card-radius: 12px;
+  --shadow-rest: 0 1px 2px rgba(16, 24, 16, 0.05);
+  --shadow-hover: 0 6px 18px rgba(16, 24, 16, 0.09);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fast: 150ms;
+
+  font:
+    400 17px/1.5 system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    Arial,
+    sans-serif;
+  color: var(--text);
+  background: var(--page);
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-padding-top: 16px;
+}
+body {
+  margin: 0;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
+}
+h2 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+h3 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+p,
+small {
+  color: var(--text-muted);
+}
+small {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+strong {
+  font-weight: 600;
+}
+a {
+  color: var(--link);
+}
+code {
+  font:
+    15px/1.4 ui-monospace,
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+/* Buttons and inputs: 44px tall, compact 36px inside lists and tables. */
+button,
+input,
+select {
+  font: inherit;
+}
+button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    background-color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease),
+    color var(--fast) var(--ease);
+}
+button:hover {
+  background-color: var(--hover);
+}
+button:disabled {
+  cursor: default;
+  color: #657061;
+  background: #ebeee7;
+  border-color: #c9d2c4;
+}
+button[aria-pressed="true"] {
+  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+button[aria-pressed="true"]:hover {
+  background: var(--accent-dark);
+}
+input,
+select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--control-line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+summary {
+  min-height: 44px;
+  padding: 8px 0;
+  cursor: pointer;
+  color: var(--link);
+  font-weight: 600;
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+summary::before {
+  content: "›";
+  display: inline-block;
+  width: 16px;
+  color: var(--text-soft);
+  transition: transform var(--fast) var(--ease);
+}
+details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.link-button,
+.sort-button {
+  min-height: 0;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+}
+.link-button {
+  color: var(--link);
+  font-size: 15px;
+  text-decoration: underline;
+}
+.sort-button {
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+}
+.link-button:hover,
+.sort-button:hover {
+  background: transparent;
+  text-decoration: underline;
+}
+
+/* Page frame and date controls */
+.dashboard {
+  width: min(1440px, 100%);
+  margin: auto;
+  padding: 32px;
+}
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* Copy link: every label sits in one grid cell, so the button is always as wide as the
+   longest and nothing beside it moves when the text changes. */
+.copy-link {
+  display: inline-grid;
+  place-content: center;
+  justify-items: center;
+  white-space: nowrap;
+}
+.copy-link > span {
+  grid-area: 1 / 1;
+}
+.copy-link > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.panel,
+.period-panel {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-rest);
+}
+.panel {
+  margin: 16px 0;
+}
+.period-panel {
+  margin: 24px 0 32px;
+  padding: 16px 24px;
+}
+.period-panel > p {
+  margin-top: 8px;
+  font-size: 15px;
+}
+.section-block {
+  margin: 32px 0;
+}
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.date-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.segmented {
+  display: inline-flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #eef1ec;
+}
+.segmented button {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+.segmented button:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text);
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 24, 16, 0.12);
+}
+.custom-dates {
+  margin-top: 8px;
+}
+.custom-dates > summary {
+  min-height: 32px;
+  padding: 4px 0;
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 400;
+}
+.custom-dates > summary:hover {
+  color: var(--text);
+}
+.date-form {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 220px) max-content;
+  align-items: end;
+  gap: 16px;
+  margin-top: 8px;
+}
+.date-form label,
+.session-filters label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 15px;
+}
+.day-selector {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.date-form input {
+  width: 100%;
+}
+.session-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  margin: 16px 0;
+}
+.scope {
+  margin: 4px 0 8px;
+  font-size: 15px;
+}
+.notice {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--tint-line);
+  border-radius: 8px;
+  background: #edf3e4;
+  color: var(--tint-text);
+}
+.notice.error {
+  border-color: #dcae8e;
+  background: #fff1e8;
+  color: #813f1f;
+}
+
+/* Main page: filters on the left, numbers on the right. */
+.impact-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.impact-main {
+  min-width: 0;
+  transition: opacity var(--fast);
+}
+.updating {
+  opacity: 0.7;
+}
+.filters {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+}
+.filters-title {
+  margin-bottom: 12px;
+  font-size: 17px;
+}
+.filters input[type="search"] {
+  width: 100%;
+  font-size: 15px;
+}
+/* Wide screens: the wrapper is invisible, so the panel still sticks beside the page.
+   Narrow screens fold it behind the Filters button (see the 1000px rules). */
+.filters-wrap {
+  display: contents;
+}
+.filters-toggle {
+  display: none;
+}
+.facet-section h3 {
+  margin-top: 16px;
+  color: var(--text-soft);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.facet-section h3,
+.facet-section > .link-button {
+  margin-left: 8px;
+}
+.facet-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.facet-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  margin: 2px 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background-color: transparent;
+  background-image: linear-gradient(
+    to right,
+    var(--bar) calc(var(--share, 0) * 100%),
+    transparent 0
+  );
+  font-size: 15px;
+  text-align: left;
+}
+.facet-list button:hover {
+  background-color: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.facet-list button[aria-pressed="true"] {
+  color: var(--accent-dark);
+  background-color: #dcebd2;
+  background-image: none;
+  font-weight: 600;
+}
+.facet-list .count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.facet-label {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+.tick {
+  flex: 0 0 1em;
+  color: var(--accent);
+}
+.tick:empty {
+  display: none;
+}
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.chip-button {
+  min-height: 32px;
+  padding: 4px 12px;
+  border-color: var(--tint-line);
+  border-radius: 999px;
+  color: var(--accent-dark);
+  background: var(--accent-tint);
+  font-size: 15px;
+}
+.chip-button:hover {
+  background: #e3eedb;
+}
+.active-filters strong {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+.headline {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 20px;
+}
+/* Always paired with .link-button, which gives the underline on hover. */
+.key-link {
+  padding: 0;
+  color: var(--accent);
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.key {
+  font-weight: 600;
+}
+.nowrap {
+  white-space: nowrap;
+}
+
+/* Cards: label, then the number at about twice its size, then context and the trend. */
+.daily-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 12px 0 16px;
+}
+.headline-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.compact-metric {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 188px;
+  margin: 0;
+  padding: 16px;
+  transition:
+    box-shadow var(--fast) var(--ease),
+    border-color var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
+}
+.compact-metric.clickable:hover {
+  border-color: #c9d6c2;
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+.compact-metric.clickable .metric-number::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--card-radius);
+}
+.compact-metric:has(.metric-number:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.compact-metric .metric-number:focus-visible {
+  outline: none;
+}
+/* The number's click area covers the whole card; the "i", the link under the number and
+   the trend line sit above it, so they still work on their own. */
+.compact-metric .info,
+.compact-metric small button,
+.compact-metric .sparkline {
+  position: relative;
+  z-index: 1;
+}
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.compact-metric h3 {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+.metric-number {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--number);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: left;
+}
+.metric-number:hover {
+  background: transparent;
+}
+/* A picked card is marked by its outline and tint (.selected); the number keeps its own look. */
+.metric-number[aria-pressed="true"],
+.metric-number[aria-pressed="true"]:hover {
+  color: var(--number);
+  background: transparent;
+}
+.metric-number .unit {
+  margin-left: 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.compact-metric.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-tint);
+}
+.change {
+  font-size: 13px;
+}
+.compact-metric .change {
+  margin-top: auto;
+  padding-top: 8px;
+}
+.change.better {
+  color: var(--better);
+}
+.change.worse {
+  color: var(--worse);
+}
+.skeleton {
+  min-height: 188px;
+  background: linear-gradient(90deg, #eef2ea 25%, #f7f9f4 50%, #eef2ea 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Folded sections under the cards */
+details.section {
+  margin: 12px 0;
+  padding: 4px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+}
+details.section > summary {
+  color: var(--text);
+  font-size: 17px;
+}
+details.section > summary:hover {
+  color: var(--accent-dark);
+}
+details.section .summary-hint {
+  padding-left: 16px;
+}
+.summary-hint {
+  display: block;
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+/* "i" buttons: 18px to see, 38px to hit (the invisible ring around each one). */
+.info-button {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-soft);
+  font-family: Georgia, serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  vertical-align: middle;
+}
+.info-button:hover,
+.info-button[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--text);
+}
+.info-button::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}
+.info-text {
+  display: block;
+  max-width: 340px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--tint-line);
+  border-radius: 8px;
+  background: #f6f9f2;
+  color: #2f3d2a;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+}
+
+/* Tables: compact rows, numbers on the right, levels as coloured chips. */
+.table-scroll {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.table-scroll.tall {
+  max-height: 70vh;
+  overflow: auto;
+}
+.table-scroll.tall thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: left;
+}
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #dce4d6;
+  vertical-align: baseline;
+}
+th {
+  background: var(--header-cell);
+  color: #36532e;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+td {
+  color: #344c2e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+tr:last-child td {
+  border-bottom: 0;
+}
+th.num,
+td.num {
+  text-align: right;
+}
+td small {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+/* "Show" toggles inside tables stay quiet; they repeat on every row. */
+td summary {
+  min-height: 0;
+  padding: 0;
+  font-weight: 400;
+}
+.open-row td {
+  background: var(--accent-tint);
+}
+.clickable-row {
+  cursor: pointer;
+}
+.clickable-row:hover td {
+  background: #f7faf4;
+}
+.open-link {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+.clickable-row:hover .open-link {
+  color: var(--accent);
+}
+.copy-id {
+  min-height: 28px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 13px;
+}
+@media (hover: hover) {
+  td .copy-id {
+    opacity: 0;
+  }
+  tr:hover .copy-id,
+  td .copy-id:focus-visible {
+    opacity: 1;
+  }
+}
+.session-id {
+  font-size: 13px;
+}
+/* An ID and its Copy button stay together on one line. */
+.id-cell {
+  white-space: nowrap;
+}
+.chip {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef3ea;
+  color: var(--tint-text);
+  font-size: 13px;
+}
+.chip.level-error {
+  background: #fde8e4;
+  color: #8a2a1b;
+}
+.chip.level-warn {
+  background: #fdf3dc;
+  color: #7a5310;
+}
+.chip.level-info {
+  padding: 0;
+  background: none;
+  color: var(--text-soft);
+}
+.raw-event {
+  max-width: 520px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.table-scroll button:focus-visible {
+  outline-offset: 1px;
+}
+
+/* Session list: sort and search above the table, the main error in each row. */
+.subhead {
+  margin: 16px 0 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 8px;
+}
+.list-toolbar p {
+  font-size: 15px;
+}
+.search-form {
+  display: flex;
+  gap: 8px;
+}
+.search-form input {
+  width: 220px;
+  font-size: 15px;
+}
+.error-cell {
+  display: grid;
+  gap: 2px;
+}
+.error-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.error-meta .times {
+  color: var(--worse);
+  font-weight: 600;
+}
+.error-text {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* The session list slides in from the right; Close stays in view while scrolling. */
+.drawer {
+  width: min(960px, 92vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 0 0 auto;
+  padding: 0 24px 24px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: #f8faf6;
+  overflow: auto;
+}
+.drawer::backdrop,
+.session-detail::backdrop {
+  background: rgba(20, 32, 20, 0.35);
+}
+.drawer[open] {
+  animation: slide-in 220ms var(--ease);
+}
+.session-detail[open] {
+  animation: rise-in 180ms var(--ease);
+}
+@keyframes slide-in {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    transform: translateY(8px) scale(0.99);
+    opacity: 0;
+  }
+}
+/* The drawer and headings that take focus when a panel opens show no outline; focus then
+   moves on as normal. */
+.drawer:focus,
+.panel-title:focus {
+  outline: none;
+}
+/* Close: one style for the drawer and the pop-up; only its place differs. */
+.drawer > .close-button {
+  position: sticky;
+  top: 16px;
+  z-index: 2;
+  display: block;
+  margin: 16px 0 -44px auto;
+}
+.drawer > article > .panel-title {
+  padding: 10px 96px 0 0;
+}
+
+/* Session pop-up: the story and one-line verdict first, four key numbers, the rest one
+   click away behind the technical switch. */
+.session-detail {
+  width: min(1100px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow: auto;
+}
+.detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.detail-head .close-button {
+  margin-left: auto;
+}
+.detail-story {
+  margin: 8px 0;
+  color: var(--text);
+}
+.verdict {
+  margin: 4px 0 12px;
+  color: var(--text);
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.metric-grid .panel {
+  margin: 0;
+  padding: 12px 16px;
+}
+.metric-grid h3 {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.metric-grid strong,
+.metric-grid .metric-number {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.metric-grid small,
+.session-errors small {
+  font-size: 13px;
+}
+.tile-link {
+  color: var(--link);
+  text-decoration: underline;
+}
+.technical-note,
+.table-note {
+  font-size: 15px;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+.switch input {
+  min-height: 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+/* A level chip stays its own size when the table stacks on a phone. */
+.session-detail td > .chip {
+  justify-self: start;
+}
+
+/* The errors box: one line per distinct error, the count in its own column. */
+.session-errors {
+  margin: 12px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.session-errors.none {
+  color: var(--text);
+}
+.session-errors header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.session-errors ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.session-errors li {
+  display: grid;
+  grid-template-columns: 2.5em 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.session-errors li:first-child {
+  margin-top: 8px;
+}
+.session-errors li .chip {
+  margin-left: 8px;
+}
+.error-count {
+  color: var(--worse);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* What the app sent, under an event: its own text first, then its fields. */
+.told q {
+  display: block;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.told span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* Section switches read as tabs: a line under the chosen one, not filled buttons. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 24px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.tabs button {
+  min-height: 40px;
+  margin-bottom: -1px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+.tabs button:hover {
+  background: transparent;
+  color: var(--text);
+}
+.tabs button[aria-pressed="true"],
+.tabs button[aria-pressed="true"]:hover {
+  border-bottom-color: var(--accent);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .drawer[open],
+  .session-detail[open] {
+    animation: none;
+  }
+  .compact-metric.clickable:hover {
+    transform: none;
+  }
+  .impact-main {
+    transition: none;
+  }
+}
+
+/* Laptops: five headline cards become three and two, never one left alone. */
+@media (max-width: 1400px) {
+  .headline-row {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .headline-row > :nth-child(-n + 3) {
+    grid-column: span 2;
+  }
+  .headline-row > :nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
+
+/* Narrow screens: the numbers come first, filters below them. */
+@media (max-width: 1000px) {
+  .impact-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .impact-main {
+    order: -1;
+  }
+  .filters {
+    position: static;
+    max-height: none;
+  }
+  .filters-toggle {
+    display: inline-flex;
+    justify-self: start;
+    order: -3;
+  }
+  .filters-wrap {
+    display: none;
+    order: -2;
+  }
+  .filters-wrap.open {
+    display: block;
+  }
+}
+
+/* Touch screens: every control at least 44px. */
+@media (pointer: coarse) {
+  .facet-list button,
+  .chip-button,
+  .copy-id {
+    min-height: 44px;
+  }
+}
+
+/* Phones: one column, and each table row becomes a card with labels beside the values. */
+@media (max-width: 650px) {
+  .dashboard {
+    padding: 16px;
+  }
+  .page-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .headline {
+    font-size: 17px;
+  }
+  .period-panel .nowrap {
+    white-space: normal;
+  }
+  .panel,
+  .period-panel {
+    padding: 16px;
+  }
+  .pager button,
+  .tabs button {
+    flex: 1 1 120px;
+  }
+  .date-form {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .date-form button {
+    grid-column: 1 / -1;
+  }
+  .headline-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .headline-row > :nth-child(n) {
+    grid-column: auto;
+  }
+  .headline-row > :first-child {
+    grid-column: 1 / -1;
+  }
+  .compact-metric {
+    min-height: 0;
+  }
+  .drawer {
+    width: 100vw;
+    padding: 0 16px 16px;
+  }
+  .session-detail {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 100dvh;
+    padding: 16px;
+    border-radius: 0;
+  }
+  .table-scroll {
+    overflow: visible;
+  }
+  table,
+  tbody,
+  tr {
+    display: block;
+    width: 100%;
+  }
+  thead {
+    display: none;
+  }
+  tbody tr {
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid #d9e2d1;
+    border-radius: 8px;
+  }
+  td {
+    display: grid;
+    grid-template-columns: 40% 1fr;
+    gap: 8px;
+    padding: 4px 0;
+    border: 0;
+  }
+  td::before {
+    content: attr(data-label);
+    color: var(--text-soft);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  td[data-label=""] {
+    display: block;
+  }
+  td[data-label=""]::before {
+    display: none;
+  }
+  td.num {
+    text-align: left;
+  }
+}
+
+@media (max-width: 400px) {
+  .headline-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Printing: the headline and the cards on paper, without controls that only work on screen. */
+@media print {
+  .filters,
+  .header-actions,
+  .copy-link,
+  .segmented,
+  .day-selector,
+  .custom-dates,
+  .info,
+  .active-filters .link-button,
+  .drawer,
+  .session-detail {
+    display: none;
+  }
+  .dashboard {
+    width: auto;
+    padding: 0;
+  }
+  .period-panel {
+    margin: 8px 0 16px;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+  .impact-layout {
+    display: block;
+  }
+  /* Numbers still loading print at full strength, not dimmed. */
+  .updating {
+    opacity: 1;
+  }
+  .panel {
+    box-shadow: none;
+  }
+  .compact-metric {
+    min-height: 0;
+  }
+  /* A card, the headline or a table row is never split across two pages. */
+  .compact-metric,
+  .headline,
+  tr {
+    break-inside: avoid;
+  }
+  /* An open table prints in full instead of inside its scroll box. */
+  .table-scroll,
+  .table-scroll.tall {
+    max-height: none;
+    overflow: visible;
+  }
+}

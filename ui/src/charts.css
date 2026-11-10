@@ -1,0 +1,216 @@
+/* Chart styles: the stacked outcome bar, ranked bars and the small trend lines. */
+.charts {
+  display: grid;
+  /* One chart per row: labels fit on one line and the bars are long enough to compare. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin: 16px 0;
+}
+.chart {
+  margin: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-rest);
+  min-width: 0;
+}
+.chart h3 {
+  margin: 0 0 4px;
+}
+.chart .chart-gap {
+  margin-top: 22px;
+}
+.chart-sub {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.chart-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+.chart-note .link-button {
+  font-size: 13px;
+}
+
+/* Stacked bar: the whole is the full width; each part is its share. */
+.stacked-bar {
+  display: flex;
+  height: 18px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--line);
+}
+.stacked-part {
+  min-width: 3px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+.stacked-part + .stacked-part {
+  box-shadow: inset 1px 0 0 var(--surface);
+}
+/* The key is even columns; each row lines up its swatch, name, count and share. */
+.stacked-key {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 12px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.key-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 3.6em;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font-size: 13px;
+}
+.key-row strong,
+.key-row small {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.key-row small,
+.bar-count small {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+}
+/* A picked row stays dark text on a light tint; the page-wide pressed style (white on green)
+   would hide the label. */
+.key-row:hover,
+.key-row[aria-pressed="true"],
+.key-row[aria-pressed="true"]:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--line);
+}
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* Ranked bars: label, bar, count, and a chevron that says it opens something. */
+.ranked-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+article .ranked-bars {
+  margin: 4px 0 16px;
+}
+.bar-row {
+  display: grid;
+  /* Fixed columns, so every bar in a chart starts and ends at the same place whatever its label
+     or count. */
+  grid-template-columns: minmax(0, 2fr) minmax(80px, 3fr) 7.5em 12px;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font-size: 13px;
+  text-align: left;
+}
+.bar-row[aria-pressed="true"],
+.bar-row[aria-pressed="true"]:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-left-color: var(--accent);
+}
+.bar-label {
+  min-width: 0;
+  line-height: 1.35;
+}
+.bar-tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bar);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.bar-detail {
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+.bar-track {
+  height: 12px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 4px;
+  background: var(--worse);
+}
+.bar-count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+.bar-go {
+  color: var(--text-muted);
+}
+
+/* Narrow screens: the label sits above its bar. */
+@media (max-width: 650px) {
+  .charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bar-row {
+    grid-template-columns: minmax(0, 1fr) 7.5em 12px;
+  }
+  .stacked-key {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bar-label {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Trend lines under the headline numbers. */
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 30px;
+  margin-top: 8px;
+}
+.sparkline polyline {
+  fill: none;
+  stroke: #5c8f45;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+/* Line next to a day with few sessions is faint, so the eye gives it less weight. */
+.sparkline polyline.faint {
+  stroke: #aec7a2;
+}
+.sparkline .hover-point {
+  fill: transparent;
+}
+.sparkline .hover-point:hover {
+  fill: rgba(36, 75, 27, 0.25);
+}
