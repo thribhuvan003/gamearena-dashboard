@@ -388,8 +388,8 @@ class ImpactApiTests(unittest.TestCase):
     def test_a_broken_error_filter_never_reaches_the_database(self, batch):
         # A code or reason without an event, an odd after_end or over-long text is a broken link.
         for bad in ({"error_code": "500"}, {"error_reason": "x"}, {"error_after_end": "1"},
-                    {"error_event": "x", "error_after_end": "yes"}, {"error_event": "x" * 301},
-                    {"error_event": "x", "error_reason": "x" * 301}):
+                    {"error_event": "x", "error_after_end": "yes"}, {"error_event": "x" * 2001},
+                    {"error_event": "x", "error_reason": "x" * 2001}):
             with self.subTest(bad):
                 self.assertEqual(asked(batch, **bad)[0].status_code, 400)
         batch.assert_not_called()
@@ -414,7 +414,7 @@ class ImpactApiTests(unittest.TestCase):
             with self.subTest(key):
                 self.assertEqual((query["filters"], query["reason"]), (["no_success", "owner"], "Connected"))
         batch.reset_mock()
-        for bad in ({"filters": "all"}, {"filters": "x;DROP"}, {"reason": "x" * 201}):
+        for bad in ({"filters": "all"}, {"filters": "x;DROP"}, {"reason": "x" * 2001}):
             self.assertEqual(asked(batch, **bad)[0].status_code, 400)
         batch.assert_not_called()
 

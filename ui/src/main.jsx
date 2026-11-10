@@ -50,12 +50,11 @@ const PRESETS = [
 function datesIn(url) {
   // A hand-edited or old link must not break the page, so anything odd is ignored.
   const day = /^\d{4}-\d{2}-\d{2}$/;
-  if (
-    !day.test(url.start || "") ||
-    !day.test(url.end || "") ||
-    url.start > url.end
-  )
-    return null;
+  // A real date reads back the same; 2026-02-30 would come back as 2026-03-02.
+  const real = (value) =>
+    day.test(value || "") &&
+    new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
+  if (!real(url.start) || !real(url.end) || url.start > url.end) return null;
   return { start: url.start, end: url.end };
 }
 
@@ -182,7 +181,14 @@ function App() {
       const dates = PRESETS.find(([key]) => key === preset)?.[2];
       // No data is stored any more, so there are no dates to show.
       if (!next.end) setPeriod(null);
-      else if (dates) setPeriod(dates(next));
+      else if (dates) {
+        const moved = dates(next);
+        setPeriod((current) =>
+          current?.start === moved.start && current?.end === moved.end
+            ? current
+            : moved,
+        );
+      }
       setRevision((value) => value + 1);
     } catch (error) {
       setError(error.message);
@@ -292,7 +298,13 @@ function App() {
         )}
       </section>
       {/* The rest of the page waits until there are dates to show. */}
-      {period && <DailyImpact period={period} revision={revision} />}
+      {period && (
+        <DailyImpact
+          period={period}
+          revision={revision}
+          dataStart={range?.start?.slice(0, 10)}
+        />
+      )}
     </main>
   );
 }

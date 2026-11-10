@@ -60,7 +60,7 @@ def choices(request):
     filters = [tag for tag in request.GET.get("filters", "").split(",") if tag]
     reason = request.GET.get("reason", "")
     # Only known groups can be filters; "all" is every session, so it is not one.
-    if any(tag not in DEFINITIONS or tag == "all" for tag in filters) or len(reason) > 200:
+    if any(tag not in DEFINITIONS or tag == "all" for tag in filters) or len(reason) > 2000:
         raise ValueError("Unknown filter")
     # The open card, if any. It must be a known group too.
     category = request.GET.get("category")
@@ -68,7 +68,7 @@ def choices(request):
         raise ValueError("Unknown category")
     # Every error has an event name, so a filter with other parts but no event is from a broken link.
     error = {key: request.GET.get(key, "") for key in ERROR_KEYS}
-    if (any(len(value) > 300 for value in error.values())
+    if (any(len(value) > 2000 for value in error.values())
             or (any(error.values()) and not error["error_event"])
             or error["error_after_end"] not in ("", "0", "1")):
         raise ValueError("Unknown error filter")

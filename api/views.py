@@ -40,8 +40,11 @@ def date_range(request):
         processed = None
     except psycopg.Error:
         return JsonResponse({"error": "Can't reach the data right now. Try again in a minute."}, status=503)
-    return JsonResponse({**dates, "recent_start": recent_start(dates["start"], dates["end"]),
-                         "processed": processed})
+    response = JsonResponse({**dates, "recent_start": recent_start(dates["start"], dates["end"]),
+                             "processed": processed})
+    # Freshness must never come from a cache.
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @require_GET
@@ -50,4 +53,9 @@ def index(request):
     page = DIST / "index.html"
     if not page.exists():
         return JsonResponse({"error": "Run scripts\\setup.cmd to build the dashboard first."}, status=503)
-    return FileResponse(page.open("rb"), content_type="text/html")
+    response = FileResponse(page.open("rb"), content_type="text/html")
+    # The page may only load its own scripts, styles and data, and can't be framed elsewhere.
+    response["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+    return response

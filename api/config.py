@@ -12,7 +12,10 @@ ROOT_URLCONF = "api.urls"
 # No models, admin or logins: every query is plain SQL run through shared/db.py.
 INSTALLED_APPS = []
 # Standard safety headers, and adding a missing trailing slash to an address.
-MIDDLEWARE = ["django.middleware.security.SecurityMiddleware", "django.middleware.common.CommonMiddleware"]
+MIDDLEWARE = ["django.middleware.security.SecurityMiddleware", "django.middleware.common.CommonMiddleware",
+              "django.middleware.clickjacking.XFrameOptionsMiddleware"]
+# No other site may show the dashboard inside a frame.
+X_FRAME_OPTIONS = "DENY"
 # Every time is UTC, as on the database connection, so a day always means a UTC day.
 USE_TZ = True
 TIME_ZONE = "UTC"

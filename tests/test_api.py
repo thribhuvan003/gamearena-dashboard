@@ -71,3 +71,16 @@ class ApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Every pooled connection the pages use is read-only, in UTC and limited to 3 minutes per query.
+class PoolTests(unittest.TestCase):
+    def test_pooled_connections_are_read_only_utc_and_time_limited(self):
+        from unittest.mock import MagicMock
+        from shared import db
+        connection = MagicMock()
+        db._prepare(connection)
+        sent = [call.args[0] for call in connection.execute.call_args_list]
+        self.assertEqual(sent, ["SET TIME ZONE 'UTC'", "SET statement_timeout = '180s'"])
+        self.assertTrue(connection.read_only)
+        self.assertFalse(connection.autocommit)

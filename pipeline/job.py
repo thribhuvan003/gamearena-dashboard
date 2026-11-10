@@ -139,6 +139,10 @@ def run(full, batch):
             return False
         try:
             pending = next(iter(read(connection, "process_state", {"name": "pending"})), None)
+            # A stopped run left by different rules can't simply carry on: most of its sessions
+            # were tagged with the old rules, so every session is tagged again.
+            if pending and pending["rules_version"] != version:
+                full = True
             # --full starts over, dropping whatever a stopped run left in the queue.
             if full:
                 connection.execute(db.QUERIES["process_queue_clear"])

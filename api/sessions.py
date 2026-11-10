@@ -35,10 +35,11 @@ def session_detail(params):
     except psycopg.errors.UndefinedTable:
         # Before the pipeline's first run there are no stored tags; the session still shows without them.
         stored = None
-    return {"session": enrich_session(rows[0], stored),
-            "connections": db.query("session_connections", params),
-            "metrics": db.query("session_metrics", params),
-            "errors": [with_stage_name(row) for row in db.query("session_errors", params)]}
+    # The rest in one batch: one connection and one consistent snapshot instead of three trips.
+    rest = db.batch({"connections": ("session_connections", params), "metrics": ("session_metrics", params),
+                     "errors": ("session_errors", params)})
+    return {"session": enrich_session(rows[0], stored), "connections": rest["connections"],
+            "metrics": rest["metrics"], "errors": [with_stage_name(row) for row in rest["errors"]]}
 
 
 def session_events(request, params):

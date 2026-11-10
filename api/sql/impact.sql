@@ -111,7 +111,8 @@ SELECT day, COUNT(*) AS sessions,
     COALESCE(SUM(low_fps_seconds), 0)::INT8 AS low_fps_seconds,
     -- No readings that day gives no average, rather than dividing by zero.
     SUM(fps_sum) / NULLIF(SUM(fps_valid), 0)::FLOAT8 AS fps_mean,
-    percentile_disc(0.5) WITHIN GROUP (ORDER BY first_ready_ms / 1000) AS ready_p50
+    percentile_disc(0.5) WITHIN GROUP (ORDER BY first_ready_ms / 1000)
+        FILTER (WHERE first_ready_ms IS NOT NULL) AS ready_p50
 FROM days
 GROUP BY day
 ORDER BY day;

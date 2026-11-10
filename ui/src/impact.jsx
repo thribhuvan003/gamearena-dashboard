@@ -794,8 +794,11 @@ function Drawer({ title, onClose, children }) {
       aria-label={title}
       tabIndex={-1}
       // Esc, Close and a click outside all close the dialog itself, so onClose
-      // runs the same way for each.
-      onClose={onClose}
+      // runs the same way for each. The session pop-up inside the drawer sends its own
+      // close event up through React, so only this dialog's own close closes the drawer.
+      onClose={(event) => {
+        if (event.target === dialog.current) onClose();
+      }}
       onClick={(event) => {
         if (clickedOutside(event)) dialog.current.close();
       }}
@@ -817,7 +820,7 @@ const NO_SORT = { key: "", order: "desc" };
 
 // Everything under the date picker for the chosen dates. The open card, filters and picked
 // error start from the address bar, so a shared link opens the same view.
-export function DailyImpact({ period, revision }) {
+export function DailyImpact({ period, revision, dataStart }) {
   const fromUrl = readUrl();
   // The group whose sessions are open in the drawer, or null when it is closed.
   const [category, setCategory] = useState(fromUrl.card || null);
@@ -981,7 +984,14 @@ export function DailyImpact({ period, revision }) {
     );
 
   const summary = data.summary;
-  const before = data.previous;
+  // The server compares with the same weekdays a week earlier (under 7 days) or the same
+  // number of days just before. If that period starts before the data does, it is only
+  // partly filled, so no comparison is shown rather than a false "Up".
+  const shift = days < 7 ? 7 : days;
+  const beforeStart = new Date(Date.parse(period.start) - shift * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  const before = dataStart && beforeStart < dataStart ? null : data.previous;
   const groups = summary.groups;
 
   // Props for a card whose number opens the sessions of one group.

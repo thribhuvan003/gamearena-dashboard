@@ -16,7 +16,8 @@ def popup(errors):
     # The session pop-up's main request, with every query mocked and the given error rows.
     replies = {"session_detail": [{"started_at": START}], "session_tags": [], "session_connections": [],
                "session_metrics": [], "session_errors": errors}
-    with patch("shared.db.query", side_effect=lambda name, params: replies[name]):
+    with patch("shared.db.query", side_effect=lambda name, params: replies[name]),             patch("shared.db.batch", side_effect=lambda requests: {key: replies[name]
+                                                                   for key, (name, _) in requests.items()}):
         return Client().get(SESSION).json()
 
 

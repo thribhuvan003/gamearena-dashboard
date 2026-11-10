@@ -1,10 +1,12 @@
 """The only code that talks to the database. Loads every named query from api/sql and
 pipeline/sql, and runs them read-only; only the pipeline asks to write."""
 import os
+import threading
 from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 # A local CockroachDB on its default port, used when DATABASE_URL is not set.
 DEFAULT_URL = "postgresql://root@127.0.0.1:26257/gamearena_analytics?sslmode=disable"
@@ -44,15 +46,43 @@ def connect(write=False):
     return connection
 
 
+# The pages share a few open read-only connections instead of opening a new one for every
+# query, so a busy page never floods the database with connections. Opened on first use, so
+# tests and the pipeline never start it.
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def _prepare(connection):
+    # Each pooled connection is set up once: UTC days, a 3-minute limit per query, read-only.
+    connection.autocommit = True
+    connection.execute("SET TIME ZONE 'UTC'")
+    connection.execute("SET statement_timeout = '180s'")
+    connection.autocommit = False
+    connection.read_only = True
+
+
+def pool():
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            # At most 5 connections per server process; a request waits up to 10 seconds for a
+            # free one. A connection is checked before use, so a restarted database is no problem.
+            _pool = ConnectionPool(database_url(), min_size=1, max_size=5, timeout=10,
+                                   kwargs={"row_factory": dict_row, "connect_timeout": 5},
+                                   configure=_prepare, check=ConnectionPool.check_connection, open=True)
+    return _pool
+
+
 def query(name, params=None):
-    # One named query on its own read-only connection.
-    with connect() as connection:
+    # One named query on a pooled read-only connection.
+    with pool().connection() as connection:
         return connection.execute(QUERIES[name], params).fetchall()
 
 
 def batch(requests):
     # {key: (report name, params)} in one transaction, so related queries see the same snapshot.
-    with connect() as connection:
+    with pool().connection() as connection:
         return {key: connection.execute(QUERIES[name], params).fetchall()
                 for key, (name, params) in requests.items()}
 

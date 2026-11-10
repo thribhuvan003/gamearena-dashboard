@@ -153,7 +153,7 @@ for stage, name in STAGE_NAMES.items():
 # and lists but not as filters. Signals only engineers act on sit in their own section, closed by default.
 SECTIONS = {
     "Connection": ("connected", "no_success", "failure", "repeated_attempts", "reconnected"),
-    "Stream quality": ("measured", "connected_no_stats", "any_low_fps", "low_fps", "stream_drops", "stats_only"),
+    "Stream quality": ("measured", "connected_no_stats", "any_low_fps", "low_fps", "stream_drops"),
     "Kind of error": tuple(key for key, _, _ in ERROR_TYPES.values()),
     "Where it failed": tuple("stage_" + stage.lower() for stage in STAGE_NAMES if stage != "Scream"),
     "How it ended": ("ended_device_deleted", "ended_not_in_use", "ended_by_user", "no_end"),
@@ -163,7 +163,7 @@ SECTIONS = {
 }
 # Groups that stay as cards and lists but not as filters (see above). A test checks that every
 # group is either here or in exactly one section.
-NOT_FILTERS = {"all", "tried", "ready", "fps", "missing_stats", "later_success", "no_later_success",
+NOT_FILTERS = {"all", "tried", "ready", "fps", "missing_stats", "later_success", "no_later_success", "stats_only",
                *(key for key, _, _ in OUTCOMES)}
 
 # Daily facts that are added together across days.

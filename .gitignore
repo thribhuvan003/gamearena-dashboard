@@ -30,3 +30,25 @@ exports/
 
 # Claude Code worktrees and local settings
 .claude/
+# Local notes, logs and tool folders
+MEMORY.md
+ERRORS.md
+*.log
+*.bak
+*.xlsx
+*.gz
+*.tar
+*.7z
+*dump*.sql
+*_export*.json
+id_rsa*
+*.p12
+*.pfx
+.envrc
+*.env
+cockroach-data/
+node_modules/
+dist/
+.vite/
+.pytest_cache/
+.idea/
