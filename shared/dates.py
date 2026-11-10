@@ -27,6 +27,8 @@ def recent_start(first, last):
 
 
 def page_number(value):
+    # Page numbers come from the address. Anything but a whole number from 1 to 100000 is a broken
+    # link; int() raises ValueError for text, which the views treat the same way.
     page = int(value)
     if not 1 <= page <= 100000:
         raise ValueError("Invalid page")

@@ -14,9 +14,11 @@ WHERE processor_lock.started_at < now() - INTERVAL '1 hour'
 RETURNING name;
 
 -- report: process_lock_refresh
+-- Marks the lock as fresh, so a long run is never taken for one that died.
 UPDATE processor_lock SET started_at = now() WHERE name = 'sessions';
 
 -- report: process_unlock
+-- Frees the lock when a run ends, whether or not it succeeded.
 DELETE FROM processor_lock WHERE name = 'sessions';
 
 -- report: process_state
@@ -24,6 +26,7 @@ DELETE FROM processor_lock WHERE name = 'sessions';
 SELECT events_until, stats_until, rules_version FROM processor_state WHERE name = %(name)s;
 
 -- report: process_save_state
+-- Saves how far a run read and which rules it used, under "sessions" or "pending".
 UPSERT INTO processor_state (name, events_until, stats_until, rules_version, finished_at)
 VALUES (%(name)s, %(events_until)s, %(stats_until)s, %(rules_version)s, now());
 
@@ -39,12 +42,16 @@ SELECT session_id FROM session_telemetry_stats
 WHERE created_at >= %(stats_since)s AND created_at <= %(stats_until)s;
 
 -- report: process_queue_clear
+-- Empties the queue, for --full. WHERE true spells out "every row", which CockroachDB's
+-- safe-updates mode requires for a delete.
 DELETE FROM processor_queue WHERE true;
 
 -- report: process_next
+-- The next batch of queued sessions, in a fixed order.
 SELECT session_id FROM processor_queue ORDER BY session_id LIMIT %(batch)s;
 
 -- report: process_dequeue
+-- Takes a saved batch off the queue, in the same transaction as the save.
 DELETE FROM processor_queue WHERE session_id = ANY(%(ids)s::UUID[]);
 
 -- report: process_events
@@ -52,6 +59,7 @@ DELETE FROM processor_queue WHERE session_id = ANY(%(ids)s::UUID[]);
 -- A failure after the session first ended is a stale reconnect to a released host,
 -- not a user who could not connect.
 WITH ends AS (
+    -- When each session first ended. Its events from then on are marked after_end.
     SELECT session_id, MIN(recorded_at) AS ended_at
     FROM session_telemetry_events
     WHERE session_id = ANY(%(ids)s::UUID[]) AND event_type = 'session_ended'
@@ -64,6 +72,7 @@ WITH ends AS (
 )
 SELECT session_id, day, COUNT(*) AS events, MIN(recorded_at) AS first_seen,
     COUNT(*) FILTER (WHERE name = 'pipeline.connect.attempt') AS attempts,
+    -- Real failures and stale ones are counted apart; only real ones make a session a failure.
     COUNT(*) FILTER (WHERE name = 'pipeline.connect.failure' AND NOT after_end) AS failures,
     COUNT(*) FILTER (WHERE name = 'pipeline.connect.failure' AND after_end) AS failures_after_end,
     MAX(recorded_at) FILTER (WHERE name = 'pipeline.connect.failure' AND NOT after_end) AS last_failure,
@@ -122,6 +131,7 @@ SELECT e.session_id, e.recorded_at::DATE AS day,
     array_agg(DISTINCT e.payload->>'stage') FILTER (WHERE e.payload->>'stage' IS NOT NULL) AS error_stages
 FROM session_telemetry_events e LEFT JOIN ends ON ends.session_id = e.session_id
 WHERE e.session_id = ANY(%(ids)s::UUID[]) AND e.level = 'error'
+    -- Sessions with no end keep every error.
     AND (ends.ended_at IS NULL OR e.recorded_at < ends.ended_at)
 GROUP BY e.session_id, e.recorded_at::DATE;
 
@@ -138,6 +148,9 @@ GROUP BY session_id, bucket_start::DATE;
 -- connections that were live at the same moment. A second belongs to its own UTC day.
 WITH readings AS (
     SELECT s.session_id,
+        -- One row per reading: i walks the positions of the ts array, and the same position in fps
+        -- and skippedFrames belongs to that moment. Integer division by 1000 turns milliseconds
+        -- into whole seconds.
         CASE WHEN jsonb_typeof(s.samples->'ts'->i) = 'number'
             THEN (s.samples->'ts'->>i)::INT8 // 1000 END AS second,
         CASE WHEN jsonb_typeof(s.samples->'fps'->i) = 'number'
@@ -150,8 +163,10 @@ WITH readings AS (
 ), per_second AS (
     -- 30 FPS is the idle rate, so a second is low only when some connection was under it.
     SELECT session_id, second,
+        -- Negative values are not readings, so they never make a second low.
         BOOL_OR(fps < %(low_fps)s) FILTER (WHERE fps >= 0) AS low,
         BOOL_OR(skipped >= %(high_skip)s) AS high_skip,
+        -- Only finite readings of 0 or more go into the average.
         SUM(fps) FILTER (WHERE fps >= 0 AND fps < 'Infinity'::FLOAT8) AS fps_sum,
         COUNT(fps) FILTER (WHERE fps >= 0 AND fps < 'Infinity'::FLOAT8) AS fps_valid
     FROM readings
@@ -179,6 +194,7 @@ WITH ends AS (
     GROUP BY session_id
 )
 SELECT e.session_id, e.recorded_at::DATE AS day,
+    -- An event sent without a name in its payload uses its event type instead.
     COALESCE(e.payload->>'event', e.event_type::STRING) AS event,
     COALESCE(e.payload->>'code', e.payload->>'errorCode', '') AS code,
     COALESCE(e.payload->>'stage', '') AS stage, COALESCE(e.payload->>'phase', '') AS phase,
@@ -188,12 +204,15 @@ SELECT e.session_id, e.recorded_at::DATE AS day,
     COALESCE(e.recorded_at >= ends.ended_at, FALSE) AS after_end, COUNT(*) AS events
 FROM session_telemetry_events e LEFT JOIN ends ON ends.session_id = e.session_id
 WHERE e.session_id = ANY(%(ids)s::UUID[]) AND e.level = 'error'
+-- The same error on the same day is one row, with how many times it was sent.
 GROUP BY 1, 2, 3, 4, 5, 6, 7, 8;
 
 -- report: process_clear_error_events
+-- Removes a batch's stored errors before they are saved again.
 DELETE FROM session_day_error_events WHERE session_id = ANY(%(ids)s::UUID[]);
 
 -- report: process_save_error_event
+-- One row of process_error_events, saved as read.
 INSERT INTO session_day_error_events (day, session_id, event, code, stage, phase, reason, after_end, events)
 VALUES (%(day)s, %(session_id)s, %(event)s, %(code)s, %(stage)s, %(phase)s, %(reason)s, %(after_end)s,
     %(events)s);
@@ -213,6 +232,7 @@ FROM (
     CROSS JOIN LATERAL jsonb_each(s.samples) AS m(key, value)
     CROSS JOIN LATERAL generate_series(0, jsonb_array_length(s.samples->'ts') - 1) AS i
     WHERE s.session_id = ANY(%(ids)s::UUID[]) AND jsonb_typeof(s.samples->'ts') = 'array'
+        -- Only these known measurements, so an unexpected key never becomes a row.
         AND m.key IN ('fps', 'latency', 'jitter', 'bitrate', 'downloadSpeed', 'decodeDuration',
             'encodeDuration', 'skippedFrames', 'accumulatedFrames')
         AND jsonb_typeof(m.value) = 'array'
@@ -221,9 +241,11 @@ WHERE second IS NOT NULL AND amount >= 0 AND amount < 'Infinity'::FLOAT8
 GROUP BY 1, 2, 3;
 
 -- report: process_clear_measures
+-- Removes a batch's stored measurements before they are saved again.
 DELETE FROM session_day_measures WHERE session_id = ANY(%(ids)s::UUID[]);
 
 -- report: process_save_measure
+-- One row of process_measures, saved as read.
 INSERT INTO session_day_measures (day, session_id, measure, total, readings)
 VALUES (%(day)s, %(session_id)s, %(measure)s, %(total)s, %(readings)s);
 
@@ -232,15 +254,18 @@ VALUES (%(day)s, %(session_id)s, %(measure)s, %(total)s, %(readings)s);
 DELETE FROM session_day_analysis WHERE session_id = ANY(%(ids)s::UUID[]);
 
 -- report: process_clear_sessions
+-- Removes a batch's session rows before they are saved again.
 DELETE FROM session_analysis WHERE session_id = ANY(%(ids)s::UUID[]);
 
 -- report: process_save_day
+-- One session's numbers for one UTC day.
 INSERT INTO session_day_analysis (day, session_id, events, batches, streamed_seconds, low_fps_seconds,
     high_skip_seconds, fps_sum, fps_valid)
 VALUES (%(day)s, %(session_id)s, %(events)s, %(batches)s, %(streamed_seconds)s, %(low_fps_seconds)s,
     %(high_skip_seconds)s, %(fps_sum)s, %(fps_valid)s);
 
 -- report: process_save_session
+-- One session's whole-life facts, its tags and its reason line.
 INSERT INTO session_analysis (session_id, first_seen, events, attempts, failures, failures_after_end,
     last_failure, last_success, first_success, first_ready_ms, failure_detail, host_connects,
     client_connects, webrtc_failures, stream_drops, reconnects, channel_errors, ends, owner_joins,

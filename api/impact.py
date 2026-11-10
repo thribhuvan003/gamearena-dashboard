@@ -11,6 +11,7 @@ from shared import db
 from shared.dates import date_window, page_number, percent
 from pipeline.rules import DEFINITIONS, SECTIONS, summary
 
+# Sessions per page in a card's list.
 PAGE_SIZE = 25
 # The trend lines cover at least this many days, ending on the last selected day.
 # Four weeks of daily values: enough to tell a real change from everyday ups and downs.
@@ -35,6 +36,7 @@ ORDER = {
 SORTS = {"first_seen", "streamed", "fps", "low_fps", "attempts", "drops", "skipped", "wait"}
 # The error filter: one error as listed under the error events, picked by all six of these.
 ERROR_KEYS = ("error_code", "error_event", "error_stage", "error_phase", "error_reason", "error_after_end")
+# What impact_measures returns for each measurement, passed to the page unchanged.
 MEASURE_FIELDS = ("average", "readings", "sessions", "typical", "high_tenth", "low_tenth")
 
 
@@ -44,9 +46,10 @@ class SearchError(ValueError):
 
 
 def selection(request):
-    # Session IDs are lowercase UUIDs, so a search may only contain those characters.
+    # The picked dates as a UTC range, plus an optional search for part of a session ID.
     params = date_window(request.GET.get("start", ""), request.GET.get("end", ""))
     params["search"] = request.GET.get("search", "").strip().lower()
+    # Session IDs are lowercase UUIDs, so a search may only contain those characters.
     if len(params["search"]) > 36 or any(c not in "0123456789abcdef-" for c in params["search"]):
         raise SearchError("Search: a session ID only has the digits 0-9, the letters a-f and dashes.")
     return params
@@ -56,8 +59,10 @@ def choices(request):
     # Filters are tag names separated by commas; a reason is one exact reason line.
     filters = [tag for tag in request.GET.get("filters", "").split(",") if tag]
     reason = request.GET.get("reason", "")
+    # Only known groups can be filters; "all" is every session, so it is not one.
     if any(tag not in DEFINITIONS or tag == "all" for tag in filters) or len(reason) > 200:
         raise ValueError("Unknown filter")
+    # The open card, if any. It must be a known group too.
     category = request.GET.get("category")
     if category and category not in DEFINITIONS:
         raise ValueError("Unknown category")
@@ -71,6 +76,7 @@ def choices(request):
 
 
 def counts(rows):
+    # Sessions per tag, from the rows of impact_tags.
     return {row["tag"]: row["sessions"] for row in rows}
 
 
@@ -113,24 +119,30 @@ def impact(request):
     try:
         window = selection(request)
         length = window["end"] - window["start"]
+        # Over ten years can only be a broken link, and would make the database read everything.
         if length.days > 3660:
             raise ValueError("Period too long")
         filters, reason, category, error = choices(request)
         page = page_number(request.GET.get("page", "1"))
 
+        # The filters every query gets; each period adds its own dates.
         shared = {"filters": filters, "reason": reason, **error}
         now = {**shared, "start": window["start"], "end": window["end"]}
         # Compare like with like: a single day (or a few) against the same weekdays a week earlier,
         # a week or more against the same number of days just before.
         shift = timedelta(days=7) if length < timedelta(days=7) else length
         before = {**shared, "start": window["start"] - shift, "end": window["end"] - shift}
+        # The trend line covers the selection, or the last TREND_DAYS days when the selection is shorter.
         trend_start = min(window["start"], window["end"] - timedelta(days=TREND_DAYS))
+        # Every query the page needs, run in one transaction so all numbers come from the same moment.
         requests = {"tags": ("impact_tags", now), "totals": ("impact_totals", now),
+                    # The filter panel's reasons cover every session, whatever card is open or search typed.
                     "reasons": ("impact_reasons", {**now, "category": "all", "search": ""}),
                     "before_tags": ("impact_tags", before), "before_totals": ("impact_totals", before),
                     "measures": ("impact_measures", now), "before_measures": ("impact_measures", before),
                     "error_events": ("impact_error_events", now),
                     "trend": ("impact_trend", {**now, "start": trend_start})}
+        # Only when a card is open: one page of its sessions, and the reasons behind its whole list.
         if category:
             listing = {**now, "category": category, "search": window["search"]}
             sort = request.GET.get("sort", "")
@@ -143,6 +155,7 @@ def impact(request):
 
         previous = period(rows["before_tags"], rows["before_totals"], rows["before_measures"])
         data = {"summary": period(rows["tags"], rows["totals"], rows["measures"]),
+                # No earlier sessions means no change to show, rather than a jump from zero.
                 "previous": previous if previous["sessions"] else None,
                 "facets": facets(counts(rows["tags"]), rows["reasons"]),
                 "titles": {key: title for key, (title, _) in DEFINITIONS.items()},
@@ -150,10 +163,12 @@ def impact(request):
                 "trend": trend(rows["trend"], trend_start, window["end"])}
         if category:
             reasons = [[row["reason"], row["sessions"]] for row in rows["list_reasons"]]
+            # The list's total is the sum of its reasons, so the two always agree without another count.
             data["sessions"] = {"items": rows["list"], "total": sum(count for _, count in reasons),
                                 "page": page, "page_size": PAGE_SIZE,
                                 "order": ORDER.get(category, "Newest first"), "reasons": reasons}
 
+        # Never cached: the pipeline updates the numbers every few minutes.
         response = JsonResponse(data)
         response["Cache-Control"] = "no-store"
         return response
@@ -163,9 +178,11 @@ def impact(request):
         # Anything else that is not valid came from an old or edited link.
         return JsonResponse({"error": "Something in this page's address isn't valid. Use Reset view."}, status=400)
     except psycopg.errors.UndefinedTable:
+        # The pipeline has not created its tables yet.
         message = "The numbers are still being prepared. They update every few minutes; try again shortly."
         return JsonResponse({"error": message}, status=503)
     except psycopg.errors.QueryCanceled:
+        # The database stopped a query at the 3-minute limit; a shorter period reads less.
         return JsonResponse({"error": "This took too long. Try fewer days."}, status=504)
     except psycopg.Error:
         return JsonResponse({"error": "Can't reach the data right now. Try again in a minute."}, status=503)

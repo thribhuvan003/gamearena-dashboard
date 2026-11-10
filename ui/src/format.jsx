@@ -2,6 +2,8 @@
 // notices, paging, and closing a pop-up when clicking outside it.
 import React, { useState } from "react";
 
+// A number grouped the Indian way (12,34,567) with at most `digits` decimals.
+// A missing value shows as a dash, so a gap never reads as zero.
 export function number(value, digits = 0) {
   return value == null
     ? "—"
@@ -22,6 +24,8 @@ export function dateLabel(day) {
   });
 }
 
+// A moment as date and time in UTC, to match the dates. Seconds only when asked for,
+// where events close together need telling apart. No value shows as a dash.
 export function utcTime(value, withSeconds = false) {
   return value
     ? new Date(value).toLocaleString("en-GB", {
@@ -47,6 +51,8 @@ export function Info({ children, topic }) {
         aria-label={topic ? `What is "${topic}"?` : "What does this mean?"}
         aria-expanded={open}
         onClick={(event) => {
+          // An "i" can sit inside something that reacts to clicks itself; the click
+          // stops here so it only opens the explanation.
           event.stopPropagation();
           setOpen(!open);
         }}
@@ -75,7 +81,8 @@ export function clickedOutside(event) {
   );
 }
 
-// Error or loading message for a request.
+// Error or loading message for a request. The error wins, so a failed request never
+// looks as if it is still loading; with neither, nothing shows.
 export function Notice({ error, loading, children }) {
   if (error)
     return (
@@ -92,6 +99,8 @@ export function Notice({ error, loading, children }) {
   return null;
 }
 
+// Previous and Next under a list, with "Page 2 of 5 · 93 rows" between them.
+// Both buttons are off while a page is loading, so clicks can't pile up.
 // noun is singular; nouns is only needed when adding an "s" doesn't make the plural.
 export function Pages({ data, page, onChange, busy, noun = "row", nouns }) {
   if (!data) return null;
@@ -104,6 +113,7 @@ export function Pages({ data, page, onChange, busy, noun = "row", nouns }) {
       >
         Previous
       </button>
+      {/* An empty list still reads "Page 1 of 1". */}
       <span role="status">
         Page {page} of{" "}
         {number(Math.max(1, Math.ceil(data.total / data.page_size)))} ·{" "}

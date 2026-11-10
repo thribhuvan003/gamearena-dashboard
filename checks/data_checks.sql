@@ -36,6 +36,7 @@ ORDER BY event_count DESC;
 WITH session_flags AS (
     SELECT
         session_id,
+        -- 1 when the session ever had this event, else 0, so the SUMs below count sessions.
         MAX(CASE WHEN payload->>'event' = 'pipeline.connect.attempt' THEN 1 ELSE 0 END) AS attempted,
         MAX(CASE WHEN payload->>'event' = 'pipeline.connect.success' THEN 1 ELSE 0 END) AS succeeded,
         MAX(CASE WHEN payload->>'event' = 'pipeline.connect.failure' THEN 1 ELSE 0 END) AS failed,
@@ -70,6 +71,7 @@ SELECT
     payload->>'event' AS pipeline_event,
     COUNT(*) AS total_events,
     COUNT(DISTINCT session_id) AS affected_sessions,
+    -- Pipeline events sent without a connection ID cannot be tied to a connection.
     COUNT(*) FILTER (WHERE connection_id IS NULL) AS missing_connection_id
 FROM session_telemetry_events
 WHERE event_type = 'custom'
@@ -83,6 +85,7 @@ SELECT
     COALESCE(payload->>'stage', 'not_recorded') AS stage,
     COUNT(*) AS failure_events,
     COUNT(DISTINCT session_id) AS affected_sessions,
+    -- Failures that carry a code, and failures that carry a reason text.
     COUNT(*) FILTER (WHERE payload ? 'code' OR payload ? 'errorCode') AS with_error_code,
     COUNT(*) FILTER (WHERE payload ? 'reason') AS with_reason
 FROM session_telemetry_events
@@ -131,6 +134,7 @@ WITH lengths AS (
 )
 SELECT
     COUNT(*) AS total_rows,
+    -- Every batch should hold one timestamp per sample, and every measurement one value per timestamp.
     COUNT(*) FILTER (WHERE ts_length IS NULL OR ts_length <> sample_count)
         AS timestamp_count_mismatch,
     COUNT(*) FILTER (WHERE fps_length IS NOT NULL AND fps_length <> ts_length)

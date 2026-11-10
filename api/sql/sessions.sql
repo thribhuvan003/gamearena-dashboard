@@ -5,11 +5,13 @@
 -- Distinct counts are separate subqueries: CockroachDB 25.3 returned wrong DISTINCT
 -- aggregates when they shared a SELECT with ordered array_agg.
 WITH events AS (
+    -- Every raw event of this session, with the app's own event name taken from the payload once.
     SELECT e.*, e.payload->>'event' AS name
     FROM session_telemetry_events e
     WHERE e.session_id = %(session_id)s
 )
 SELECT session_id,
+    -- Start, recorded end and last event. With no end recorded, the last event stands in for it.
     MIN(recorded_at) FILTER (WHERE event_type = 'session_started') AS started_at,
     MAX(recorded_at) FILTER (WHERE event_type = 'session_ended') AS ended_at,
     MAX(recorded_at) AS last_event_at,
@@ -35,6 +37,7 @@ SELECT session_id,
         FILTER (WHERE event_type = 'session_ended'))[1] AS end_reason,
     (SELECT string_agg(mode, ', ' ORDER BY mode) FROM (SELECT DISTINCT payload->>'mode' AS mode FROM events
         WHERE payload->>'mode' IS NOT NULL) modes) AS access_modes,
+    -- Statistics batches live in their own table, so they are counted on their own.
     (
         SELECT COUNT(*) FROM session_telemetry_stats WHERE session_id = %(session_id)s
     ) AS batches
@@ -49,6 +52,7 @@ GROUP BY session_id;
 -- the app keeps retrying after the session has closed.
 -- The same error on every retry is one row, so the retries it came on are shown as "2" or "2-5".
 WITH ends AS (
+    -- When the session first ended, if it did.
     SELECT MIN(recorded_at) AS ended_at FROM session_telemetry_events
     WHERE session_id = %(session_id)s AND event_type = 'session_ended'
 ), errors AS (
@@ -60,6 +64,7 @@ WITH ends AS (
             THEN (e.payload->>'attempt')::FLOAT8 END AS attempt,
         COALESCE(e.payload->>'reason', e.payload->>'errorText',
             NULLIF(e.message, COALESCE(e.payload->>'event', e.event_type::STRING))) AS reason,
+        -- A session with no end recorded has no errors after its end.
         COALESCE(e.recorded_at >= ends.ended_at, FALSE) AS after_end, e.recorded_at
     FROM session_telemetry_events e CROSS JOIN ends
     WHERE e.session_id = %(session_id)s AND e.level = 'error'
@@ -88,11 +93,13 @@ WITH filtered AS (
             THEN payload->'timeToReadyMs' END AS ready_ms
     FROM session_telemetry_events
     WHERE session_id = %(session_id)s
+        -- An empty filter means all. "missing" picks events sent without a connection ID.
         AND (%(source)s = '' OR source::STRING = %(source)s)
         AND (%(level)s = '' OR level::STRING = %(level)s)
         AND (%(connection)s = '' OR connection_id::STRING = %(connection)s
             OR (%(connection)s = 'missing' AND connection_id IS NULL))
 ), page AS (
+    -- The event ID breaks ties between events recorded at the same moment, so paging is stable.
     SELECT * FROM filtered ORDER BY recorded_at, id LIMIT %(limit)s OFFSET %(offset)s
 )
 -- The left join keeps the total even when the requested page is past the end.
@@ -122,6 +129,8 @@ ORDER BY first_seen, connection_id;
 -- report: session_metrics
 -- Summary of each measurement over one whole session. Only finite numbers >= 0 are valid.
 WITH readings AS (
+    -- samples holds one array per measurement. This unpacks it into one row per reading. Anything
+    -- that is not an object or an array reads as empty, so a malformed batch adds nothing.
     SELECT metric.key AS metric,
         CASE WHEN jsonb_typeof(item.value) = 'number' THEN item.value::STRING::FLOAT8 END AS amount
     FROM session_telemetry_stats
@@ -131,6 +140,7 @@ WITH readings AS (
     CROSS JOIN LATERAL jsonb_array_elements(
         CASE WHEN jsonb_typeof(metric.items) = 'array' THEN metric.items ELSE '[]'::JSONB END
     ) item(value)
+    -- ts holds the timestamps, not a measurement.
     WHERE session_id = %(session_id)s AND metric.key <> 'ts'
 ), checked AS (
     SELECT metric, amount,
@@ -139,6 +149,8 @@ WITH readings AS (
 )
 SELECT metric,
     COUNT(*) FILTER (WHERE valid) AS valid,
+    -- Under 30 is the low-frame-rate line (LOW_FPS in pipeline/rules.py). Counted for every
+    -- measurement, but it only means something for fps.
     COUNT(*) FILTER (WHERE valid AND amount < 30) AS under_30,
     COUNT(*) FILTER (WHERE NOT valid) AS missing,
     AVG(amount) FILTER (WHERE valid) AS mean,
@@ -156,6 +168,7 @@ WITH buckets AS (
 ), page AS (
     SELECT * FROM buckets ORDER BY bucket_start, id LIMIT %(limit)s OFFSET %(offset)s
 ), readings AS (
+    -- Only the batches on this page are unpacked, so a long session's pages stay quick.
     SELECT stats.id, metric.key AS metric,
         CASE WHEN jsonb_typeof(item.value) = 'number' THEN item.value::STRING::FLOAT8 END AS amount
     FROM session_telemetry_stats stats
@@ -169,11 +182,14 @@ WITH buckets AS (
     WHERE metric.key <> 'ts'
 ), means AS (
     SELECT id, metric,
+        -- Only finite numbers of 0 or more count, as in session_metrics.
         AVG(amount) FILTER (WHERE amount >= 0 AND amount < 'Infinity'::FLOAT8) AS mean,
         COUNT(*) FILTER (WHERE amount >= 0 AND amount < 'Infinity'::FLOAT8) AS valid
     FROM readings
     GROUP BY id, metric
 ), grouped AS (
+    -- One row per batch on the page. The left join keeps a batch with no readings, and the FILTER
+    -- keeps its empty measurement out of the object.
     SELECT page.id, page.bucket_start, page.bucket_end,
         jsonb_object_agg(means.metric, jsonb_build_object('mean', means.mean, 'valid', means.valid))
             FILTER (WHERE means.metric IS NOT NULL) AS metrics

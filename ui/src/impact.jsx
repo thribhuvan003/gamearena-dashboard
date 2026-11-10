@@ -79,6 +79,7 @@ const NETWORK = [
 // Filter sections show their biggest few until "Show all" is clicked.
 const SHOWN = 5;
 
+// How each kind of number is written, one decimal each.
 const percent = (value) => number(value, 1) + "%";
 const seconds = (value) => number(value, 1) + " s";
 const hours = (value) => number(value, 1) + " h";
@@ -104,15 +105,20 @@ function difference(
   noise = 0,
   tooFew = false,
 ) {
+  // Nothing to compare with: no line at all.
   if (now == null || before == null) return null;
   if (tooFew)
     return { text: `Too few sessions to compare with ${versus}`, tone: "" };
-  // Inside the normal day-to-day range, a change is not a change.
+  // Inside the normal day-to-day range, a change is not a change. Nor is one too small
+  // to show once rounded. Either way the line just gives the old value, e.g.
+  // "Same day last week: 9.6 s".
   if (format(now) === format(before) || Math.abs(now - before) <= noise)
     return {
       text: `${versus.replace(/^the (.)/, (_, first) => first.toUpperCase())}: ${format(before)}`,
       tone: "",
     };
+  // Better or worse depends on which way is good for this number; with no good way
+  // (higherIsBetter is null) it is only up or down.
   const up = now > before;
   const tone =
     higherIsBetter == null ? "" : up === higherIsBetter ? "better" : "worse";
@@ -127,7 +133,8 @@ function difference(
   };
 }
 
-// What each share is out of, in words.
+// What each share is out of, in words. Any group not listed is out of those who tried
+// to connect.
 const BASE_WORDS = {
   stream_drops: "connected sessions",
   connected_no_stats: "connected sessions",
@@ -198,6 +205,7 @@ const SESSION_ERRORS = [
 
 // Two charts, both in sessions, and every bar opens exactly the sessions it counts.
 function Charts({ groups, reasons, reason, category, onOpen, onReason }) {
+  // One part per outcome, in the fixed colour order, so the bar reads the same every day.
   const outcomes = Object.keys(OUTCOME_COLOURS).map((key) => ({
     key,
     label: groups[key].title,
@@ -212,14 +220,18 @@ function Charts({ groups, reasons, reason, category, onOpen, onReason }) {
   const never = reasons
     .filter(
       ([text]) =>
-        text.startsWith("Failed: ") || text.startsWith("No error reported"),
+        text.startsWith("Failed: ") || text.startsWith("No failure report"),
     )
     .map(([text, count]) => ({
       key: text,
+      // The heading already says they never got video, so the label drops the
+      // "Failed: " start; whether the app sent an error moves to a small tag.
       label: text
-        .replace(/^(Failed|No error reported): /, "")
+        .replace(/^(Failed|No failure report): /, "")
         .replace(/^./, (first) => first.toUpperCase()),
-      tag: text.startsWith("Failed: ") ? "error sent" : "no error sent",
+      tag: text.startsWith("Failed: ")
+        ? "pipeline.connect.failure sent"
+        : "no pipeline.connect.failure",
       count,
       colour: reasonColour(text),
       active: reason === text,
@@ -227,6 +239,7 @@ function Charts({ groups, reasons, reason, category, onOpen, onReason }) {
     }));
   const neverTotal = never.reduce((sum, row) => sum + row.count, 0);
 
+  // Only errors that happened, most common first.
   const errors = SESSION_ERRORS.map(([key, label, sent]) => ({
     key,
     label,
@@ -237,6 +250,8 @@ function Charts({ groups, reasons, reason, category, onOpen, onReason }) {
   }))
     .filter((row) => row.count > 0)
     .sort((a, b) => b.count - a.count);
+  // Two kinds of error kept out of the chart because they rarely hurt a session.
+  // They are still counted in a note under it, one click away.
   const harmless = groups.error_route_attempt.count;
   const retries = groups.failure_after_end.count;
 
@@ -252,6 +267,7 @@ function Charts({ groups, reasons, reason, category, onOpen, onReason }) {
           total={total}
           label="How sessions ended up"
         />
+        {/* Only when some sessions never got video. */}
         {never.length > 0 && (
           <>
             <h3 className="chart-gap">
@@ -279,6 +295,7 @@ function Charts({ groups, reasons, reason, category, onOpen, onReason }) {
         ) : (
           <p>No errors on these dates.</p>
         )}
+        {/* The note names only the kinds that happened, joined by a dot when both did. */}
         {(harmless > 0 || retries > 0) && (
           <p className="chart-note">
             Not shown:{" "}
@@ -323,6 +340,7 @@ function Card({
   onOpen,
   trend,
 }) {
+  // The number with its unit, used the same way whether or not it is a button.
   const shown = (
     <>
       {value}
@@ -341,6 +359,7 @@ function Card({
         <h3>{title}</h3>
         {hint && <Info topic={title}>{hint}</Info>}
       </div>
+      {/* Only a card with sessions behind it makes its number a button. */}
       {onOpen ? (
         <button
           type="button"
@@ -383,8 +402,11 @@ function shortTitle(title, section) {
 // Filters with counts: every tag and reason, counted under the filters already chosen.
 // Choosing more than one keeps only sessions that have all of them.
 function Filters({ facets, filters, reason, onChange }) {
+  // The "Find a filter" box narrows every section to rows containing its text.
   const [find, setFind] = useState("");
   const box = useRef(null);
+  // Pressing / jumps to the find box, as on many sites, unless someone is typing
+  // in another box or a dialog is open over the page.
   useEffect(() => {
     function jump(event) {
       const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(
@@ -402,7 +424,9 @@ function Filters({ facets, filters, reason, onChange }) {
     window.addEventListener("keydown", jump);
     return () => window.removeEventListener("keydown", jump);
   }, []);
+  // Which sections have "Show all" on, by section title.
   const [expanded, setExpanded] = useState({});
+  // A tag is added or taken away; the "How far it got" choice stays as it is.
   const toggle = (key) =>
     onChange(
       filters.includes(key)
@@ -410,6 +434,8 @@ function Filters({ facets, filters, reason, onChange }) {
         : [...filters, key],
       reason,
     );
+  // The server's tag sections, then "How far it got". Every session has exactly one
+  // reason, so only one can be picked; picking it again lets it go.
   const sections = [
     ...facets.sections.map((section) => ({
       title: section.title,
@@ -455,9 +481,12 @@ function Filters({ facets, filters, reason, onChange }) {
         const items = section.items.filter((item) =>
           item.text.toLowerCase().includes(wanted),
         );
+        // A section with no match for the search disappears.
         if (!items.length) return null;
+        // Searching shows every match, so no row hides behind "Show all".
         const all = wanted || expanded[section.title];
-        // Engineering signals stay folded away until someone asks for them.
+        // Engineering signals stay folded away until someone asks for them, unless one
+        // of them is already picked.
         if (
           section.title === "Technical signals" &&
           !all &&
@@ -476,6 +505,7 @@ function Filters({ facets, filters, reason, onChange }) {
               </button>
             </section>
           );
+        // Folded, a section shows its biggest few plus any picked row, so a pick never hides.
         const visible = all
           ? items
           : items.filter((item, i) => i < SHOWN || item.on);
@@ -504,6 +534,7 @@ function Filters({ facets, filters, reason, onChange }) {
                 </li>
               ))}
             </ul>
+            {/* No "Show all" while searching: every match is already shown. */}
             {!wanted && items.length > SHOWN && (
               <button
                 type="button"
@@ -522,7 +553,10 @@ function Filters({ facets, filters, reason, onChange }) {
   );
 }
 
+// The "Showing only:" row above the cards: one chip per filter in use, each removing
+// itself when clicked, and "Clear all". Hidden when nothing is filtered.
 function ActiveFilters({ filters, reason, error, titles, sections, onChange }) {
+  // Each tag's section title, so a chip can say where its filter came from.
   const sectionOf = Object.fromEntries(
     sections.flatMap((section) =>
       section.tags.map((tag) => [tag.key, section.title]),
@@ -579,7 +613,9 @@ function ActiveFilters({ filters, reason, error, titles, sections, onChange }) {
 }
 
 // The answer in one sentence, before any card.
+// The session count and never-connected share are buttons that open those sessions.
 function Headline({ summary, before, when, versus, onClear, onOpen }) {
+  // No sessions: say so and offer a way out. Clear filters only shows when some are on.
   if (!summary.sessions)
     return (
       <p className="panel headline">
@@ -591,6 +627,7 @@ function Headline({ summary, before, when, versus, onClear, onOpen }) {
         )}
       </p>
     );
+  // The never-connected share now and on the dates compared with, when there are any.
   const never = summary.groups.no_success.share;
   const neverBefore = before?.groups.no_success.share;
   return (
@@ -653,7 +690,9 @@ const ERROR_COLUMNS = [
 // Every error event with its code, stage, phase and text, exactly as sent, and how many
 // sessions had it.
 function ErrorReasons({ rows, error, onPick }) {
+  // How many different event names there are, for the line on the folded heading.
   const events = new Set(rows.map((row) => row.event));
+  // Whether a row is the error picked now, so that row is highlighted.
   const same = (row) =>
     ["code", "event", "stage", "phase", "reason"].every(
       (key) => error?.[key] === row[key],
@@ -754,6 +793,8 @@ function Drawer({ title, onClose, children }) {
       className="drawer"
       aria-label={title}
       tabIndex={-1}
+      // Esc, Close and a click outside all close the dialog itself, so onClose
+      // runs the same way for each.
       onClose={onClose}
       onClick={(event) => {
         if (clickedOutside(event)) dialog.current.close();
@@ -771,21 +812,30 @@ function Drawer({ title, onClose, children }) {
   );
 }
 
+// No column picked: the session list keeps the order the server gives it.
 const NO_SORT = { key: "", order: "desc" };
 
+// Everything under the date picker for the chosen dates. The open card, filters and picked
+// error start from the address bar, so a shared link opens the same view.
 export function DailyImpact({ period, revision }) {
   const fromUrl = readUrl();
+  // The group whose sessions are open in the drawer, or null when it is closed.
   const [category, setCategory] = useState(fromUrl.card || null);
+  // Page, search and sort of the session list in the drawer.
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState(NO_SORT);
+  // The title of the card that opened the list, which the drawer mentions.
   const [from, setFrom] = useState(null);
+  // What the whole page is narrowed to: tags, one "how far it got" reason, one error.
   const [filters, setFilters] = useState(
     fromUrl.filters ? fromUrl.filters.split(",") : [],
   );
   const [reason, setReason] = useState(fromUrl.reason || "");
   const [error, setError] = useState(errorFrom(fromUrl));
+  // The last numbers that arrived, kept on screen while new ones load.
   const [shown, setShown] = useState(null);
+  // Goes up on "Try again", which asks for the same numbers once more.
   const [retry, setRetry] = useState(0);
   // On narrow screens the filters fold away behind a button.
   const [showFilters, setShowFilters] = useState(false);
@@ -797,7 +847,7 @@ export function DailyImpact({ period, revision }) {
     setSort(NO_SORT);
   }
 
-  // A new date starts from the first page with no search.
+  // A new date starts from the first page with no search or sort.
   useEffect(firstPage, [period]);
 
   // Keep the address bar in step with the page, and follow it on Back and Forward.
@@ -818,6 +868,7 @@ export function DailyImpact({ period, revision }) {
       setFilters(url.filters ? url.filters.split(",") : []);
       setReason(url.reason || "");
       setError(errorFrom(url));
+      // The card a list came from isn't in the address, so it is forgotten.
       setFrom(null);
       firstPage();
     }
@@ -836,6 +887,7 @@ export function DailyImpact({ period, revision }) {
       filters: filters.join(","),
       reason,
       ...errorParams(error),
+      // Sorting only matters, and is only sent, while a list is open.
       ...(category && sort.key ? { sort: sort.key, order: sort.order } : {}),
     },
     revision + retry,
@@ -852,12 +904,15 @@ export function DailyImpact({ period, revision }) {
   }, [result.data]);
   const data = result.data || shown;
 
+  // Opens a group's sessions in the drawer. `source` is the card title clicked, if any.
   function open(next, source = null) {
     setFrom(source);
     setCategory(next);
     firstPage();
   }
 
+  // Changes what the page is narrowed to; the picked error stays unless one is given.
+  // The list goes back to page 1, as the page it was on may no longer exist.
   function filter(nextFilters, nextReason, nextError = error) {
     setFilters(nextFilters);
     setReason(nextReason);
@@ -883,8 +938,10 @@ export function DailyImpact({ period, revision }) {
     filter(filters, reason === text ? "" : text);
   }
 
+  // How many days are shown, counting both ends; the comparison is the same length.
   const days = (new Date(period.end) - new Date(period.start)) / 86400000 + 1;
   const versus = versusWords(days);
+  // The dates in words, for the headline and the drawer.
   const when =
     period.start === period.end
       ? dateLabel(period.end)
@@ -896,6 +953,8 @@ export function DailyImpact({ period, revision }) {
     return (
       <section className="section-block">
         <Notice error={result.error} />
+        {/* Reset drops the open card and every filter, in case the link's choices
+            are what the server couldn't answer. */}
         {result.error ? (
           <button
             type="button"
@@ -939,6 +998,9 @@ export function DailyImpact({ period, revision }) {
     return {
       value: number(count),
       note: share == null ? null : `${number(share, 1)}% of ${of}`,
+      // The share is compared, not the count, so busier days don't look worse.
+      // A gap within chance is no change, and under MIN_SESSIONS either side
+      // it is not judged at all.
       change:
         then &&
         difference(
@@ -957,6 +1019,7 @@ export function DailyImpact({ period, revision }) {
     };
   }
 
+  // The change line for one of the summary's own numbers, against the dates compared with.
   function changeOf(key, format, higherIsBetter, noise = 0) {
     return (
       before &&
@@ -970,6 +1033,7 @@ export function DailyImpact({ period, revision }) {
       )
     );
   }
+  // Everyday noise of a daily number, from its trend, for periods as long as this one.
   const noiseOf = (field) => dailyNoise(data.trend, field, days);
 
   // Faint days rest on few sessions: those who tried for the never-connected share,
@@ -987,6 +1051,7 @@ export function DailyImpact({ period, revision }) {
 
   return (
     <section className="section-block">
+      {/* A failed update keeps the numbers already shown and offers another go. */}
       {result.error && (
         <p className="notice error" role="alert">
           Couldn&apos;t update: {result.error} Showing the previous numbers.{" "}
@@ -1000,6 +1065,7 @@ export function DailyImpact({ period, revision }) {
         </p>
       )}
       <div className="impact-layout">
+        {/* Only seen on narrow screens; it counts the filters in use while they are hidden. */}
         <button
           type="button"
           className="filters-toggle"
@@ -1018,6 +1084,7 @@ export function DailyImpact({ period, revision }) {
           />
         </div>
 
+        {/* "updating" dims the old numbers while new ones load. */}
         <div
           className={"impact-main" + (result.loading ? " updating" : "")}
           aria-busy={Boolean(result.loading)}
@@ -1043,8 +1110,10 @@ export function DailyImpact({ period, revision }) {
             onOpen={open}
           />
 
+          {/* With no sessions the headline says so, and nothing else is drawn. */}
           {summary.sessions > 0 && (
             <>
+              {/* The five headline cards, each with a trend line. */}
               <div className="daily-metrics headline-row">
                 <Card
                   title="Sessions"
@@ -1058,6 +1127,7 @@ export function DailyImpact({ period, revision }) {
                       {number(summary.attempted)} tried to connect
                     </button>
                   }
+                  // More or fewer sessions is neither good nor bad, so null.
                   change={changeOf(
                     "sessions",
                     plain,
@@ -1097,6 +1167,8 @@ export function DailyImpact({ period, revision }) {
                   value={number(summary.streamed_hours, 1)}
                   unit="h"
                   note={`${number(summary.connected - groups.connected_no_stats.count)} of ${number(summary.connected)} connected sessions sent readings`}
+                  // Streamed hours is a total over the days, not a daily figure,
+                  // so its noise grows with the number of days.
                   change={changeOf(
                     "streamed_hours",
                     hours,
@@ -1130,12 +1202,15 @@ export function DailyImpact({ period, revision }) {
                 reason={reason}
                 category={category}
                 onOpen={open}
+                // A reason in the chart narrows the page to it and lists those sessions.
                 onReason={(text) => {
                   pickReason(text);
                   open("no_success");
                 }}
               />
 
+              {/* Folded sections for detail; each heading gives the key numbers so most
+                  people never need to open it. */}
               <details className="section">
                 <summary>
                   Connection details
@@ -1206,6 +1281,8 @@ export function DailyImpact({ period, revision }) {
                   {NETWORK.map(([key, title, unit, higherIsBetter, what]) => {
                     const now = summary.measures[key];
                     const then = before?.measures?.[key];
+                    // "1 in 10" is the bad tail: the lowest tenth for higher-is-better
+                    // numbers, the highest tenth for the rest.
                     const side = higherIsBetter ? "below" : "above";
                     return (
                       <Card
@@ -1217,6 +1294,8 @@ export function DailyImpact({ period, revision }) {
                           now &&
                           `Typical session · 1 in 10 ${side} ${number(higherIsBetter ? now.low_tenth : now.high_tenth, 1)}${unit}`
                         }
+                        // No daily history for these yet, so a fixed share of the old
+                        // value stands in for noise.
                         change={
                           now &&
                           then &&
@@ -1246,16 +1325,19 @@ export function DailyImpact({ period, revision }) {
         </div>
       </div>
 
+      {/* The drawer opens for any known group; an unknown card in an old link is ignored. */}
       {category && groups[category] && (
         <Drawer
           title={groups[category].title}
           onClose={() => setCategory(null)}
         >
           <Notice error={result.error} />
+          {/* Until this card's own rows arrive, say so rather than show another card's. */}
           {list?.category !== category ? (
             <Notice loading>Loading sessions…</Notice>
           ) : (
             <AffectedSessions
+              // A new card or new dates start the list afresh.
               key={category + period.start + period.end}
               category={category}
               reason={reason}
@@ -1264,10 +1346,12 @@ export function DailyImpact({ period, revision }) {
               sessions={list.sessions}
               busy={Boolean(result.loading)}
               sort={sort}
+              // A new sort or search starts again from page 1.
               onSort={(next) => {
                 setSort(next);
                 setPage(1);
               }}
+              // What the list is limited to, in words: the dates and every filter.
               scope={[
                 when,
                 ...filters.map((key) => data.titles[key] || key),
@@ -1277,6 +1361,7 @@ export function DailyImpact({ period, revision }) {
                 .filter(Boolean)
                 .join(" · ")}
               from={from}
+              // With an error or reason picked, the list shows error columns instead.
               errorView={Boolean(error || reason)}
               search={search}
               onSearch={(text) => {

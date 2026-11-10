@@ -32,11 +32,15 @@ ERROR_EVENTS = {"error_dropped": "pipeline.connection.dropped", "error_video_con
                 "error_network_route": "ice.connection.state", "error_route_attempt": "ice.candidate.error",
                 "error_channel_gave_up": "ws.reconnect.exhausted", "error_decode": "media.decode.error"}
 STAGES = ("Session", "JoinSession", "Config", "Device", "Websocket", "WebRTC", "Video", "Scream", "Input", "Cursor")
+# The end tags by the exact end reason the app sends.
 END_TAGS = {"ended_device_deleted": "Device deleted", "ended_not_in_use": "Not in use", "ended_by_user": "Ended by user"}
+# The outcome tags; on the dashboard they must add up to all sessions.
 OUTCOMES = ("outcome_connected", "outcome_recovered", "outcome_later_failed", "outcome_failed", "outcome_silent",
             "outcome_not_tried")
 
+# First and last event dates: the range checked when none is given.
 DATES = "SELECT MIN(recorded_at)::DATE AS start, MAX(recorded_at)::DATE AS end FROM session_telemetry_events"
+# The chosen days in UTC: start is a midnight timestamp, and the end date is included whole.
 DAYS = "recorded_at >= %(start)s AND recorded_at < %(end)s::DATE + 1"
 # An event on or after the session's first end is a retry of a closed session, not a real error.
 NOT_STALE = """NOT EXISTS (SELECT 1 FROM session_telemetry_events x WHERE x.session_id = e.session_id
@@ -46,6 +50,8 @@ TRIED = f"""SELECT DISTINCT session_id FROM session_telemetry_events e WHERE {DA
     AND (payload->>'event' = 'pipeline.connect.attempt'
         OR (payload->>'event' = 'pipeline.connect.failure' AND {NOT_STALE}))"""
 
+# Cards a plain count can check, by the dashboard's tag names. "no_success" is the sessions that
+# tried, minus those with a success.
 SESSION_COUNTS = {
     "all": f"SELECT COUNT(DISTINCT session_id) FROM session_telemetry_events WHERE {DAYS}",
     "tried": f"SELECT COUNT(*) FROM ({TRIED}) x",
@@ -62,6 +68,7 @@ SESSION_COUNTS = {
 }
 
 # How each session ended up, from its last success, its last real error and its attempts.
+# The checks run in the same order as outcome() in pipeline/rules.py, written out again here.
 OUTCOME_COUNTS = f"""
 WITH ends AS (
     SELECT session_id, MIN(recorded_at) AS ended_at FROM session_telemetry_events
@@ -89,6 +96,8 @@ GROUP BY 1"""
 
 # Readings are checked the way the job reads them: a timestamp or value counts only when it is a
 # number, and a frame rate only when it is at least 0 and finite.
+# Batches that started up to an hour before the range are read too, since their later seconds can
+# fall inside it. Only sessions with events on the chosen days count.
 STREAM = """
 WITH readings AS (
     SELECT s.session_id,
@@ -133,11 +142,14 @@ ERROR_TYPES = f"""SELECT COUNT(DISTINCT session_id) FROM session_telemetry_event
     WHERE level = 'error' AND {DAYS} AND {NOT_STALE} AND payload->>'event' = %(value)s
         AND (payload->>'event' NOT IN ('webrtc.connection.state', 'ice.connection.state')
             OR payload->>'state' = 'failed')"""
+# Sessions with an error from one stage, and sessions that ended for one exact reason.
 ERROR_STAGES = f"""SELECT COUNT(DISTINCT session_id) FROM session_telemetry_events e
     WHERE level = 'error' AND {DAYS} AND {NOT_STALE} AND payload->>'stage' = %(value)s"""
 ENDS = f"""SELECT COUNT(DISTINCT session_id) FROM session_telemetry_events
     WHERE payload->>'end_reason' = %(value)s AND {DAYS}"""
 
+# The plain average of every valid reading of six measurements over the chosen days, for any
+# session that has events at all, as the dashboard counts them.
 MEASURES = """
 SELECT measure, SUM(amount) / COUNT(*) AS average
 FROM (
@@ -170,11 +182,13 @@ ERROR_EVENT_GROUPS = f"""SELECT COALESCE(payload->>'code', payload->>'errorCode'
 
 
 def nearest_rank(values, share):
+    # The same nearest-rank pick as percentile_disc in the dashboard's SQL: always a value that occurred.
     values = sorted(values)
     return values[max(math.ceil(share * len(values)) - 1, 0)] if values else None
 
 
 def error_key(row):
+    # What tells error groups apart: the six parts of the dashboard's error filter.
     return row["code"], row["event"], row["stage"], row["phase"], row["reason"], row["after_end"]
 
 
@@ -183,10 +197,13 @@ def main():
         # Recounting from raw readings is slow; give it longer than a page request gets.
         connection.execute("SET statement_timeout = '900s'")
         dates = connection.execute(DATES).fetchone()
+        # The dates given on the command line, or every recorded day.
         start, end = (sys.argv[1], sys.argv[2]) if len(sys.argv) == 3 else (str(dates["start"]), str(dates["end"]))
+        # Start as UTC midnight; end stays a date so DAYS can add one day to it.
         params = {"start": f"{start} 00:00:00+00", "end": end}
 
         def one(sql, **extra):
+            # A query that returns a single number.
             return next(iter(connection.execute(sql, {**params, **extra}).fetchone().values()))
 
         cards = {key: one(sql) for key, sql in SESSION_COUNTS.items()}
@@ -201,6 +218,7 @@ def main():
         groups_found = {error_key(row): row["sessions"] for row in connection.execute(ERROR_EVENT_GROUPS, params)}
         measures = {row["measure"]: round(row["average"], 2) for row in connection.execute(MEASURES, params)}
 
+    # The dashboard's own answer, asked through its API the way the page asks.
     client = Client()
     data = client.get("/api/impact/", {"start": start, "end": end}).json()
     summary, groups = data["summary"], data["summary"]["groups"]
@@ -215,11 +233,13 @@ def main():
 
     # Error events: compared as a whole, and only the counts are printed, never the text.
     shown = {error_key(row): row["sessions"] for row in data["error_events"]}
+    # -1 when the two sides list different groups, so a mismatch can never pass by accident.
     rows.append(("Error event groups that match", len(groups_found), sum(
         shown.get(key) == count for key, count in groups_found.items()) if shown.keys() == groups_found.keys() else -1))
 
     print(f"{start} to {end}")
     print("Raw data against the dashboard:")
+    # Every row that differs counts; any difference fails the check.
     failed = 0
     for name, expected, found_here in rows:
         failed += expected != found_here
@@ -243,6 +263,7 @@ def main():
     failed += consistent
     print(f"{len(rows)} numbers and {len(groups)} lists checked: "
           + ("all match." if not failed else f"{failed} differ."))
+    # A non-zero exit code tells whatever ran the check that something differed.
     sys.exit(1 if failed else 0)
 
 

@@ -18,6 +18,8 @@ function shift(day, days) {
 
 // Open on the latest complete day: a day that is still filling in makes every number look low.
 function latestDay(range) {
+  // The last day counts as complete once data has arrived from its final hour.
+  // When it is the only day stored, it is shown anyway rather than nothing.
   const complete =
     new Date(range.last_seen) >= new Date(`${range.end}T23:00:00Z`);
   if (complete || range.start === range.end) return range.end;
@@ -46,6 +48,7 @@ const PRESETS = [
 
 // The dates in a link, or null when it has none or they make no sense.
 function datesIn(url) {
+  // A hand-edited or old link must not break the page, so anything odd is ignored.
   const day = /^\d{4}-\d{2}-\d{2}$/;
   if (
     !day.test(url.start || "") ||
@@ -60,6 +63,7 @@ function datesIn(url) {
 function Freshness({ range }) {
   if (!range?.end) return null;
   const processed = range.processed;
+  // Data is stored but the numbers have never been worked out yet.
   if (!processed?.finished_at)
     return (
       <p className="notice">
@@ -67,6 +71,8 @@ function Freshness({ range }) {
         refresh shortly.
       </p>
     );
+  // "behind" means data arrived after the last update, so the numbers miss some of it;
+  // the line then stands out as a notice and says so.
   return (
     <p className={processed.behind ? "notice" : undefined}>
       {range.last_seen && (
@@ -81,17 +87,24 @@ function Freshness({ range }) {
   );
 }
 
+// The whole page. It owns the dates; everything below the date picker is DailyImpact.
 function App() {
+  // Which days have data, and how fresh the numbers are, as the API reports it.
   const [range, setRange] = useState(null);
+  // The dates being shown: { start, end }, or null before they are known.
   const [period, setPeriod] = useState(null);
+  // Which quick date button picked them, or "custom" for dates chosen by hand.
   const [preset, setPreset] = useState("day");
+  // Goes up on every Refresh, which makes every report on the page load again.
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   // The "Pick a range" boxes, kept in step with the dates shown.
   const [custom, setCustom] = useState({ start: "", end: "" });
+  // Whether the dates have been put in the address bar yet this visit.
   const written = useRef(false);
 
+  // On opening, ask which dates have data, then decide which dates to show.
   useEffect(() => {
     const controller = new AbortController();
     getReport("range", {}, controller.signal)
@@ -117,6 +130,7 @@ function App() {
   }, []);
 
   // The dates live in the address bar too, so Back returns to the previous dates.
+  // The first write replaces the entry, so opening the page adds no extra Back step.
   useEffect(() => {
     if (!period) return;
     writeUrl({ start: period.start, end: period.end }, !written.current);
@@ -127,6 +141,7 @@ function App() {
   useEffect(() => {
     function follow() {
       const dates = datesIn(readUrl());
+      // A step that only changed something else, like a filter, leaves the dates alone.
       if (
         !dates ||
         (dates.start === period?.start && dates.end === period?.end)
@@ -139,12 +154,14 @@ function App() {
     return () => window.removeEventListener("popstate", follow);
   }, [period]);
 
+  // Shows new dates, remembering which button (or "custom") chose them.
   function choose(next, selected) {
     setError("");
     setPreset(selected);
     setPeriod({ start: next.start, end: next.end });
   }
 
+  // The "Show these dates" form. Dates the wrong way round get a message, not a request.
   function apply(event) {
     event.preventDefault();
     if (custom.start > custom.end) {
@@ -154,6 +171,7 @@ function App() {
     choose(custom, "custom");
   }
 
+  // Refresh data: asks again which dates exist, then reloads every number on the page.
   async function refresh() {
     setLoading(true);
     setError("");
@@ -162,6 +180,7 @@ function App() {
       setRange(next);
       // A quick date button moves with the data; picked dates stay put.
       const dates = PRESETS.find(([key]) => key === preset)?.[2];
+      // No data is stored any more, so there are no dates to show.
       if (!next.end) setPeriod(null);
       else if (dates) setPeriod(dates(next));
       setRevision((value) => value + 1);
@@ -188,6 +207,7 @@ function App() {
       <section className="period-panel" aria-label="Report period">
         <div className="date-bar">
           <div className="segmented" role="group" aria-label="Dates">
+            {/* A button is lit when its dates match the ones shown, however they were picked. */}
             {range?.end &&
               PRESETS.map(([key, label, datesOf]) => {
                 const dates = datesOf(range);
@@ -216,6 +236,7 @@ function App() {
               disabled={loading}
               value={period && period.start === period.end ? period.end : ""}
               onChange={(event) => {
+                // Clearing the box is ignored; only a real day changes the dates.
                 if (event.target.value)
                   choose(
                     { start: event.target.value, end: event.target.value },
@@ -225,6 +246,7 @@ function App() {
             />
           </label>
         </div>
+        {/* For a range, the dates are spelled out, since the day box above is blank. */}
         {period && period.start !== period.end && (
           <p>
             {dateLabel(period.start)} – {dateLabel(period.end)}
@@ -264,10 +286,12 @@ function App() {
         <Notice error={error} loading={loading}>
           Loading dates…
         </Notice>
+        {/* The API answered, but the database holds no sessions yet. */}
         {range && !range.end && (
           <p>No telemetry stored yet. Import the data, then refresh.</p>
         )}
       </section>
+      {/* The rest of the page waits until there are dates to show. */}
       {period && <DailyImpact period={period} revision={revision} />}
     </main>
   );

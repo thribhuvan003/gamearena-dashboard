@@ -17,6 +17,7 @@ export const OUTCOME_COLOURS = {
 };
 
 // A "how far it got" reason takes the colour of the outcome it belongs to.
+// The server words each reason with a fixed start, so the start tells the outcome.
 export function reasonColour(text) {
   if (text === "Connected") return OUTCOME_COLOURS.outcome_connected;
   if (text === "Connected after an error")
@@ -24,16 +25,22 @@ export function reasonColour(text) {
   if (text.startsWith("Connected, but"))
     return OUTCOME_COLOURS.outcome_later_failed;
   if (text.startsWith("Failed")) return OUTCOME_COLOURS.outcome_failed;
-  if (text.startsWith("No error")) return OUTCOME_COLOURS.outcome_silent;
+  if (text.startsWith("No failure report"))
+    return OUTCOME_COLOURS.outcome_silent;
   return OUTCOME_COLOURS.outcome_not_tried;
 }
 
+// A count as a percent of the total; 0 for an empty total instead of dividing by zero.
 const share = (count, total) => (total ? (count / total) * 100 : 0);
 const percent = (value) => number(value, 1) + "%";
 
-// One row per item, longest first, each a button that opens the sessions behind it.
+// One row per item, each a button that opens the sessions behind it. Rows show in the
+// order given; callers put the biggest first.
 // rows: [{ key, label, detail?, tag?, count, colour?, onClick, active? }]
+// With a `total`, each row also shows its percent of it.
 export function RankedBars({ rows, total, unit = "sessions", label }) {
+  // Bars are measured against the longest row, so the top row fills the track
+  // and the rest compare with it.
   const most = Math.max(1, ...rows.map((row) => row.count));
   return (
     <ul className="ranked-bars" aria-label={label}>
@@ -81,6 +88,7 @@ export function RankedBars({ rows, total, unit = "sessions", label }) {
 // and keyboards use the key and skip the bar.
 // parts: [{ key, label, count, colour, onClick, active? }]
 export function StackedBar({ parts, total, label }) {
+  // Outcomes with no sessions are left out, so the key never lists zeros.
   const shown = parts.filter((part) => part.count > 0);
   return (
     <div className="stacked">
@@ -128,6 +136,7 @@ export function StackedBar({ parts, total, label }) {
 // Under this many sessions, one unusual session can move a day's number a lot.
 const FEW = 30;
 
+// "1 day", "3 days", for the chart's summary in words.
 const dayCount = (n) => `${n} ${n === 1 ? "day" : "days"}`;
 
 // A small line of one number per day, ending on the last selected day.
@@ -137,9 +146,11 @@ const dayCount = (n) => `${n} ${n === 1 ? "day" : "days"}`;
 export function Sparkline({ trend, field, format, counts }) {
   const values = trend.map((day) => day[field]);
   const known = values.filter((value) => value != null);
+  // A line needs two points; with fewer there is no trend to show.
   if (known.length < 2) return null;
   const low = Math.min(...known);
   const high = Math.max(...known);
+  // Whether day i rests on too few sessions to trust. Without counts, no day is faint.
   const few = (i) => counts?.[i] != null && counts[i] < FEW;
 
   // The range of values the box's height stands for. Stretching every line to its own
@@ -159,6 +170,8 @@ export function Sparkline({ trend, field, format, counts }) {
     bottom = low >= 0 ? Math.max(0, middle - span / 2) : middle - span / 2;
     top = bottom + span;
   }
+  // Where a day sits in the 160 by 30 box, keeping a small margin so the ends and peaks
+  // of the line aren't cut off. SVG counts down from the top, so higher values sit higher.
   const x = (i) => 2 + (i / (values.length - 1)) * 156;
   const y = (value) => 26 - ((value - bottom) / (top - bottom)) * 22;
 
@@ -169,12 +182,16 @@ export function Sparkline({ trend, field, format, counts }) {
   for (let i = 1; i < values.length; i++) {
     if (values[i - 1] == null || values[i] == null) continue;
     const faint = few(i - 1) || few(i);
+    // Carry on the current piece when it has the same look and ends on the day before;
+    // otherwise start a new one.
     const piece = pieces[pieces.length - 1];
     if (piece && piece.faint === faint && piece.days.at(-1) === i - 1)
       piece.days.push(i);
     else pieces.push({ faint, days: [i - 1, i] });
   }
 
+  // The line in words, for screen readers and the hover title: the dates, the lowest and
+  // highest day, and any days that are missing or rest on few sessions.
   const last = values.length - 1;
   const missing = values.length - known.length;
   const thin = values.filter((value, i) => value != null && few(i)).length;
@@ -211,6 +228,8 @@ export function Sparkline({ trend, field, format, counts }) {
             .join(" ")}
         />
       ))}
+      {/* An invisible dot over each day with a value, big enough to hover; it lights up
+          and its title shows that day. */}
       {values.map(
         (value, i) =>
           value != null && (

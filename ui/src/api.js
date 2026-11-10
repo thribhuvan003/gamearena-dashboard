@@ -2,8 +2,11 @@
 // for a component and reloads it when its inputs change.
 import { useEffect, useState } from "react";
 
+// Asks the API for one report by name. A cancelled request is passed on unchanged so the
+// caller can ignore it; every other failure becomes a sentence a person can act on.
 export async function getReport(name, params = {}, signal) {
   let response;
+  // No answer at all: the server is down or the network is.
   try {
     response = await fetch(`/api/${name}/?${new URLSearchParams(params)}`, {
       signal,
@@ -14,6 +17,7 @@ export async function getReport(name, params = {}, signal) {
       "Can't reach the dashboard right now. Check your connection and refresh.",
     );
   }
+  // The API always answers in JSON; anything else (say, a proxy's error page) is unreadable.
   let result;
   try {
     result = await response.json();
@@ -21,6 +25,7 @@ export async function getReport(name, params = {}, signal) {
     if (error.name === "AbortError") throw error;
     throw new Error("Something went wrong loading this. Refresh to try again.");
   }
+  // On a failed request the API explains itself in `error`; show its words when it does.
   if (!response.ok)
     throw new Error(result.error || "Could not load. Refresh to retry.");
   return result;
@@ -29,7 +34,11 @@ export async function getReport(name, params = {}, signal) {
 // A new revision (the Refresh button) asks again with the same parameters.
 export function useReport(name, params, revision = 0) {
   const [result, setResult] = useState({});
+  // The inputs as one string. Callers build a new params object on every render, so
+  // comparing the text means a request only goes out when a value really changes.
   const key = JSON.stringify([name, params, revision]);
+  // Each change cancels the request still in flight, so a slow answer for old inputs
+  // can never overwrite the answer for the current ones.
   useEffect(() => {
     if (!name) return;
     const controller = new AbortController();

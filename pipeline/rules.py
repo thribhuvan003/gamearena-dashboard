@@ -2,6 +2,7 @@
 and filter means, and what each share is out of. Plain Python: no Django, no database."""
 from shared.dates import percent
 
+# Frames per second below which a second, or a session's average, counts as low.
 LOW_FPS = 30
 # Proposed, not yet agreed by the team: a second with 10+ skipped frames is a stutter,
 # and a session is flagged when 10% or more of its streamed seconds stutter.
@@ -21,6 +22,7 @@ OF_MEASURED = {"low_fps", "any_low_fps", "high_skip"}
 
 # Error events by the app's own event names. Only these become tags, so the tag list cannot grow on its own.
 # Connection errors (pipeline.connect.failure) already have their own groups below.
+# app event name: (tag, title, definition)
 ERROR_TYPES = {
     "pipeline.connection.dropped": (
         "error_dropped", "Error: pipeline.connection.dropped",
@@ -55,11 +57,12 @@ OUTCOMES = (
      "A connect attempt failed with an error, then a later one got video."),
     ("outcome_later_failed", "Connected, then a later try failed",
      "Got video, but its last connection error came after its last success (or at the same moment)."),
-    ("outcome_failed", "Never connected, error sent",
-     "Never got video; the app sent a connection error (pipeline.connect.failure)."),
-    ("outcome_silent", "Never connected, no error sent",
-     "Tried to connect but never got video, and the app sent no connection error; its reason is the "
-     "furthest step it reached."),
+    ("outcome_failed", "Never connected, failure reported",
+     "Never got video; the app sent a failure report (pipeline.connect.failure) before the session ended."),
+    ("outcome_silent", "Never connected, no failure report",
+     "Tried to connect but never got video, and the app sent no failure report (pipeline.connect.failure) "
+     "before the session ended. Other error events may still be there; its reason is the furthest step "
+     "it reached."),
     ("outcome_not_tried", "Never tried to connect",
      "The session never made a connect attempt and sent no connection error."),
 )
@@ -158,6 +161,8 @@ SECTIONS = {
     "Technical signals": ("channel_errors", "channel_dropped", "channel_recovered", "route_restarted",
                           "session_recreated", "failure_after_end", "high_skip", "stage_scream"),
 }
+# Groups that stay as cards and lists but not as filters (see above). A test checks that every
+# group is either here or in exactly one section.
 NOT_FILTERS = {"all", "tried", "ready", "fps", "missing_stats", "later_success", "no_later_success",
                *(key for key, _, _ in OUTCOMES)}
 
@@ -179,15 +184,18 @@ def combine_sessions(days):
             total = sessions.setdefault(sid, {"session_id": sid, "error_types": [], "error_stages": []})
             for key in COUNTS:
                 total[key] = total.get(key, 0) + row.get(key, 0)
+            # The error kinds and stages of every day, each listed once.
             for key in ("error_types", "error_stages"):
                 total[key] = sorted(set(total[key]) | set(row.get(key) or ()))
             first, failure, success = row.get("first_seen"), row.get("last_failure"), row.get("last_success")
+            # The earliest event of all days.
             if first:
                 total["first_seen"] = min(total.get("first_seen") or first, first)
             # The failure detail belongs to the latest failure, whichever day it was on.
             if failure and failure >= (total.get("last_failure") or failure):
                 total["last_failure"] = failure
                 total["failure_detail"] = row.get("failure_detail")
+            # The latest success of all days.
             if success:
                 total["last_success"] = max(total.get("last_success") or success, success)
             # Time to video is the value sent with the session's first success, whichever day it was on,
@@ -196,12 +204,14 @@ def combine_sessions(days):
             if started and started <= (total.get("first_success") or started):
                 total["first_success"] = started
                 total["first_ready_ms"] = row.get("first_ready_ms")
+    # With every day added, the average frame rate and the reason line can be worked out.
     for row in sessions.values():
         row["fps_mean"] = row["fps_sum"] / row["fps_valid"] if row["fps_valid"] else None
         row["why"] = why(row)
     return list(sessions.values())
 
 
+# Plain words for the phases and codes connection errors send. Anything else is shown as sent.
 PHASES = {"pre-connect": "before connecting", "connecting": "while connecting", "ended": "after it ended"}
 CODES = {"500": "server error", "400": "request rejected"}
 
@@ -212,6 +222,7 @@ def error_words(detail):
     # The code stays at the end so engineers can still trace it.
     if not detail or not detail.replace("/", "").strip():
         return "an error with no code"
+    # A detail with fewer than three parts is padded, so a missing part reads as empty.
     code, step, phase = (detail.split(" / ") + ["", "", ""])[:3]
     words = CODES.get(code, "error")
     if phase:
@@ -250,30 +261,36 @@ def outcome(row):
 def why(row):
     # The session's outcome in words, with the furthest connection step it reached.
     result = outcome(row)
+    # Outcomes whose reason needs no detail.
     simple = {"stats_only": "Sent readings but no activity events", "outcome_connected": "Connected",
               "outcome_recovered": "Connected after an error", "outcome_not_tried": "Never tried to connect"}
     if result in simple:
         return simple[result]
+    # Outcomes that end on an error: the error itself, in words.
     if result == "outcome_later_failed":
         return "Connected, but a later try failed: " + error_words(row.get("failure_detail"))
     if result == "outcome_failed":
         return "Failed: " + error_words(row.get("failure_detail"))
-    # No error was reported, so the steps it did report show where it stopped.
+    # The app sent no failure report (pipeline.connect.failure), so the steps it did report show
+    # where it stopped. Other error events may still be there, e.g. the video connection failing.
     if row["webrtc_failures"]:
-        return "No error reported: the video connection failed"
+        return "No failure report: the video connection failed"
     if not row["host_connects"] and not row["client_connects"]:
-        return "No error reported: neither the player nor the host joined"
+        return "No failure report: neither the player nor the host joined"
     if not row["host_connects"]:
-        return "No error reported: the host never joined"
+        return "No failure report: the host never joined"
     if not row["client_connects"]:
-        return "No error reported: the player never joined"
-    return "No error reported: both joined but video never started"
+        return "No failure report: the player never joined"
+    return "No failure report: both joined but video never started"
 
 
 def groups(row):
     # Every group a session is in, worked out once. Groups overlap: one session can fail,
     # recover and still have low FPS. Cards, lists and filters all read these, so they always agree.
+    # Sent readings: a stored batch or at least one counted second.
     measured = row["batches"] > 0 or row["streamed_seconds"] > 0
+    # A session with readings but no events is only in "Readings but no activity", and only if it
+    # really sent some.
     if row["events"] == 0:
         return {category: category == "stats_only" and measured for category in DEFINITIONS}
     failed = row["failures"] > 0
@@ -290,12 +307,14 @@ def groups(row):
         "later_success": result == "outcome_recovered",
         "no_later_success": result in ("outcome_later_failed", "outcome_failed"),
         "no_success": tried and not connected,
+        # Only errors after it closed: a session with a real error as well is a failure instead.
         "failure_after_end": row["failures_after_end"] > 0 and not failed,
         "low_fps": row["fps_mean"] is not None and row["fps_mean"] < LOW_FPS,
         "any_low_fps": row["low_fps_seconds"] > 0,
         "fps": row["fps_mean"] is not None,
         "ready": row.get("first_ready_ms") is not None,
         "stream_drops": row["stream_drops"] > 0,
+        # Stutter in at least HIGH_SKIP_SHARE of its streamed seconds; nothing streamed, never flagged.
         "high_skip": row["streamed_seconds"] > 0
         and row["high_skip_seconds"] >= HIGH_SKIP_SHARE * row["streamed_seconds"],
         "repeated_attempts": row["attempts"] > 1,
@@ -316,6 +335,7 @@ def groups(row):
         "ended_device_deleted": row["device_deleted_ends"] > 0,
         "ended_not_in_use": row["not_in_use_ends"] > 0,
         "ended_by_user": row["user_ends"] > 0,
+        # One tag per known error type, per stage and per outcome.
         **{key: name in errors for name, (key, _, _) in ERROR_TYPES.items()},
         **{"stage_" + stage.lower(): stage in stages for stage in STAGE_NAMES},
         **{key: key == result for key, _, _ in OUTCOMES},
@@ -332,7 +352,9 @@ def summary(counts, totals):
     sessions = totals["sessions"]
     cards = {}
     for category, (title, definition) in DEFINITIONS.items():
+        # "all" and "stats_only" come from the totals; every other card from the tag counts.
         count = {"all": sessions, "stats_only": totals["stats_only"]}.get(category, counts.get(category, 0))
+        # What the share is out of: see OF_ATTEMPTED, OF_CONNECTED and OF_MEASURED above.
         if category in OF_ATTEMPTED:
             base = counts.get("tried", 0)
         elif category in OF_CONNECTED:
@@ -341,6 +363,7 @@ def summary(counts, totals):
             base = counts.get("measured", 0)
         else:
             base = sessions
+        # Readings-only sessions are not counted as sessions, so they have no share of them.
         share = None if category == "stats_only" else percent(count, base)
         cards[category] = {"title": title, "definition": definition, "count": count, "share": share, "base": base}
     streamed = totals["streamed_seconds"] / 3600
@@ -366,6 +389,8 @@ def enrich_session(row, stored=None):
     result["duration_is_minimum"] = bool(start and not end and row.get("last_event_at"))
     stop = end or row.get("last_event_at")
     result["duration_seconds"] = (stop - start).total_seconds() if start and stop and stop >= start else None
+    # Before the first pipeline run nothing is stored, so no tags and no reason. A tag stored by an
+    # older rules version that no longer exists is skipped.
     saved = stored["tags"] if stored else []
     result["tags"] = [DEFINITIONS[tag][0] for tag in saved if tag in DEFINITIONS and tag not in OBVIOUS]
     result["why"] = stored["why"] if stored else None

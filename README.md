@@ -100,8 +100,8 @@ shows exactly what the app sent. If the rules change, the next pipeline run reta
 
 - Times and days are UTC.
 - Every session with events has exactly one outcome: connected with no errors, connected after an
-  error, connected but a later try failed, never connected with an error sent, never connected
-  with no error sent, or never tried to connect. The outcome cards add up to all sessions.
+  error, connected but a later try failed, never connected with a failure report (`pipeline.connect.failure`), never
+  connected with no failure report, or never tried to connect. The outcome cards add up to all sessions.
 - A connection error or a successful connect proves the session tried to connect, even when its
   attempt event was lost.
 - A connection error after a session has ended is a stale retry, not a failure.

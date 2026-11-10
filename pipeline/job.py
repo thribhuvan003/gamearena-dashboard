@@ -22,16 +22,21 @@ from shared import db
 from pipeline.rules import HIGH_SKIP, LOW_FPS, combine_sessions, tags
 
 ROOT = Path(__file__).resolve().parents[1]
+# Sessions tagged per transaction; --batch changes it.
 BATCH = 200
+# Stands for "from the very start" when there is no saved point yet.
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 # Events have no insert time, so each run looks a day back for late arrivals.
 # Stats have created_at, so a few minutes of overlap is enough.
 EVENTS_LOOKBACK = timedelta(days=1)
 STATS_LOOKBACK = timedelta(minutes=10)
+# The per-day numbers saved to session_day_analysis. A day without one of them saves 0.
 DAY_COLUMNS = ("events", "batches", "streamed_seconds", "low_fps_seconds", "high_skip_seconds",
                "fps_sum", "fps_valid")
 # Facts a session may not have, such as a failure time when it never failed. Saved as empty.
 OPTIONAL = ("first_seen", "last_failure", "last_success", "first_success", "first_ready_ms", "failure_detail")
+# The files that decide the tags (see rules_version). Editing any of them, even a comment, retags
+# every session on the next run.
 RULE_FILES = ("pipeline/rules.py", "pipeline/sql/job.sql", "pipeline/sql/schema.sql", "pipeline/job.py")
 
 
@@ -43,6 +48,8 @@ def rules_version():
 
 
 def create_tables(connection):
+    # Runs schema.sql one statement at a time and skips pieces that hold only comments. The file is
+    # split on semicolons, so a comment there must never contain one.
     text = (ROOT / "pipeline" / "sql" / "schema.sql").read_text(encoding="utf-8")
     for statement in text.split(";"):
         if any(line.strip() and not line.strip().startswith("--") for line in statement.splitlines()):
@@ -50,6 +57,7 @@ def create_tables(connection):
 
 
 def read(connection, name, params=None):
+    # A named query on the job's own connection, which may write, unlike db.query.
     return connection.execute(db.QUERIES[name], params).fetchall()
 
 
@@ -64,6 +72,8 @@ def day_facts(connection, ids):
 
 
 def process_batch(connection, ids, version):
+    # Tags one batch of sessions and replaces everything stored for them. All reading happens first,
+    # so the transaction below only deletes and inserts.
     days = day_facts(connection, ids)
     sessions = combine_sessions([days])
     measures = read(connection, "process_measures", {"ids": ids})
@@ -74,6 +84,7 @@ def process_batch(connection, ids, version):
         for name in ("process_dequeue", "process_clear_days", "process_clear_sessions", "process_clear_measures",
                      "process_clear_error_events"):
             cursor.execute(queries[name], {"ids": ids})
+        # Old rows are gone; save the new ones: per session and day, per session, measurements, errors.
         cursor.executemany(queries["process_save_day"], [
             {"day": day["day"], "session_id": day["session_id"],
              **{column: day.get(column, 0) for column in DAY_COLUMNS}} for day in days])
@@ -91,6 +102,7 @@ def with_retries(work, attempts=5):
         try:
             return work()
         except psycopg.errors.SerializationFailure:
+            # The last attempt lets the error through; earlier ones wait a little longer each time.
             if attempt == attempts - 1:
                 raise
             time.sleep(0.5 * (attempt + 1))
@@ -103,11 +115,14 @@ def fill_queue(connection, full, version):
     done = next(iter(read(connection, "process_state", {"name": "sessions"})), None)
     if done and done["rules_version"] != version:
         full = True  # The rules changed, so every session is retagged.
+    # Each table resumes a little before its saved point (see the lookbacks above). With --full or no
+    # saved point these are empty, and the queue is filled from EPOCH.
     events_from = not full and done and done["events_until"] and done["events_until"] - EVENTS_LOOKBACK
     stats_from = not full and done and done["stats_until"] and done["stats_until"] - STATS_LOOKBACK
     connection.execute(db.QUERIES["process_queue_changed"], {
         "events_since": events_from or EPOCH, "events_until": marks["events_until"] or EPOCH,
         "stats_since": stats_from or EPOCH, "stats_until": marks["stats_until"] or EPOCH})
+    # Saved as "pending" until the queue is empty; run() then copies it to "sessions".
     connection.execute(db.QUERIES["process_save_state"], {"name": "pending", **marks, "rules_version": version})
 
 
@@ -116,25 +131,31 @@ def run(full, batch):
     started = time.monotonic()
     tagged = 0
     with db.connect(write=True) as connection:
+        # Creates the pipeline's own tables on first use; safe to repeat.
         create_tables(connection)
+        # Another live run holds the lock: stop rather than tag the same sessions twice.
         if not read(connection, "process_lock"):
             print("Another run is still tagging sessions. Try again when it has finished.", file=sys.stderr)
             return False
         try:
             pending = next(iter(read(connection, "process_state", {"name": "pending"})), None)
+            # --full starts over, dropping whatever a stopped run left in the queue.
             if full:
                 connection.execute(db.QUERIES["process_queue_clear"])
             # An empty queue starts a new run; otherwise the last run stopped early and carries on.
             if full or not read(connection, "process_next", {"batch": 1}) or not pending:
                 fill_queue(connection, full, version)
+            # Take the next batch from the queue until it is empty.
             while ids := [str(row["session_id"]) for row in read(connection, "process_next", {"batch": batch})]:
                 tagged += with_retries(lambda: process_batch(connection, ids, version))
                 # A long run keeps its lock fresh, so it is never mistaken for one that died.
                 connection.execute(db.QUERIES["process_lock_refresh"])
                 print(f"Tagged {tagged} sessions")
+            # The queue is empty, so the point this run read up to becomes the saved point.
             pending = read(connection, "process_state", {"name": "pending"})[0]
             connection.execute(db.QUERIES["process_save_state"], {**pending, "name": "sessions"})
         finally:
+            # Released even when the run fails, so the next run need not wait an hour for it to expire.
             connection.execute(db.QUERIES["process_unlock"])
     print(f"Done in {time.monotonic() - started:.0f} s. {tagged} sessions updated.")
     return True
@@ -147,6 +168,7 @@ def main(argv=None):
     parser.add_argument("--every", type=int, metavar="SECONDS",
                         help="keep running, looking for new data every SECONDS")
     args = parser.parse_args(argv)
+    # A single run. Exit code 1 tells a script that another run was busy.
     if not args.every:
         sys.exit(0 if run(args.full, args.batch) else 1)
     # Keeps the dashboard current while it is open. A failed run is retried at the next interval.

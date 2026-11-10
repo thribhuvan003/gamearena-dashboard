@@ -9,6 +9,7 @@ from helpers import SESSION_ID, START
 from pipeline import job
 from shared.db import QUERIES
 
+# One measurement row and one error row, as the job's read queries would return them.
 MEASURE = {"session_id": SESSION_ID, "day": date(2026, 10, 1), "measure": "fps", "total": 1200.0, "readings": 20}
 ERROR_EVENT = {"session_id": SESSION_ID, "day": date(2026, 10, 2), "event": "ice.candidate.error", "code": "701",
                "stage": "Video", "phase": "connecting", "reason": "test reason", "after_end": False, "events": 2}
@@ -34,8 +35,10 @@ class Stop(Exception):
     pass
 
 
+# The job with every query mocked: what one batch saves, the rules version, retries and --every.
 class ProcessorTests(unittest.TestCase):
     def run_batch(self):
+        # Runs one batch against a mocked connection and returns the cursor that recorded its writes.
         connection = MagicMock()
         cursor = connection.cursor.return_value.__enter__.return_value
         with patch("pipeline.job.read", side_effect=lambda _, name, params=None: REPORTS[name]):
@@ -47,6 +50,7 @@ class ProcessorTests(unittest.TestCase):
         return next(c.args[1] for c in cursor.executemany.call_args_list if c.args[0] == QUERIES[name])
 
     def test_a_batch_leaves_the_queue_and_replaces_everything_it_stored(self):
+        # The queue entry and every old row are removed first, for this batch's sessions only.
         cursor = self.run_batch()
         statements = [c.args[0] for c in cursor.execute.call_args_list]
         self.assertEqual(statements, [QUERIES[name] for name in (
@@ -56,6 +60,7 @@ class ProcessorTests(unittest.TestCase):
             self.assertEqual(c.args[1], {"ids": [SESSION_ID]})
 
     def test_one_session_row_and_one_row_per_day(self):
+        # Two days of events become two day rows but one session row, with their numbers added.
         cursor = self.run_batch()
         days = self.saved(cursor, "process_save_day")
         self.assertEqual(sorted(day["day"] for day in days), [date(2026, 10, 1), date(2026, 10, 2)])
@@ -76,6 +81,7 @@ class ProcessorTests(unittest.TestCase):
         self.assertEqual(self.saved(cursor, "process_save_error_event"), [ERROR_EVENT])
 
     def test_rules_version_follows_the_rule_files_but_not_line_endings(self):
+        # Any change to a rule file retags every session, but a checkout's line endings must not.
         def version(text):
             with patch("pathlib.Path.read_bytes", return_value=text):
                 return job.rules_version()
@@ -85,6 +91,7 @@ class ProcessorTests(unittest.TestCase):
         self.assertNotEqual(version(b"rule one\nrule two\n"), version(b"rule one\nrule three\n"))
 
     def test_a_clash_is_retried_and_other_errors_are_not(self):
+        # A clash between transactions is retried; any other error stops the job at once.
         calls = []
 
         def clash():

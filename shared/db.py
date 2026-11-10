@@ -6,6 +6,7 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 
+# A local CockroachDB on its default port, used when DATABASE_URL is not set.
 DEFAULT_URL = "postgresql://root@127.0.0.1:26257/gamearena_analytics?sslmode=disable"
 
 # Every "-- report: name" section in api/sql/*.sql (what the pages read) and pipeline/sql/*.sql
@@ -14,8 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SQL_FILES = sorted([*(ROOT / "api" / "sql").glob("*.sql"), *(ROOT / "pipeline" / "sql").glob("*.sql")])
 QUERIES = {}
 for sql_file in SQL_FILES:
+    # Text before a file's first marker is its header and is dropped. In each section, the rest of
+    # the marker line is the name and everything after it is the query.
     for section in sql_file.read_text(encoding="utf-8").split("-- report: ")[1:]:
         name, _, text = section.partition("\n")
+        # Names must be unique across all files, or one query would quietly replace another.
         if name in QUERIES:
             raise ValueError(f"Duplicate SQL report: {name}")
         QUERIES[name] = text.strip()
@@ -25,6 +29,7 @@ QUERIES = {name: text.replace("{selected}", QUERIES["selected"]) for name, text 
 
 
 def database_url():
+    # DATABASE_URL points the app and the pipeline at another database.
     return os.environ.get("DATABASE_URL", DEFAULT_URL)
 
 
@@ -40,6 +45,7 @@ def connect(write=False):
 
 
 def query(name, params=None):
+    # One named query on its own read-only connection.
     with connect() as connection:
         return connection.execute(QUERIES[name], params).fetchall()
 

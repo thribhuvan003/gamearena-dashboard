@@ -1,4 +1,5 @@
 /* Chart styles: the stacked outcome bar, ranked bars and the small trend lines. */
+/* The chart area on the main page, and the white box round each chart. */
 .charts {
   display: grid;
   /* One chart per row: labels fit on one line and the bars are long enough to compare. */
@@ -18,6 +19,7 @@
 .chart h3 {
   margin: 0 0 4px;
 }
+/* Space above a second chart that shares the same box. */
 .chart .chart-gap {
   margin-top: 22px;
 }
@@ -41,6 +43,8 @@
   overflow: hidden;
   background: var(--line);
 }
+/* Each part is a button with the button frame removed. Even a tiny share keeps a 3px sliver,
+   so it can still be seen and clicked. */
 .stacked-part {
   min-width: 3px;
   height: 100%;
@@ -49,6 +53,7 @@
   border: 0;
   border-radius: 0;
 }
+/* A thin white line between neighbouring parts, so similar colours stay apart. */
 .stacked-part + .stacked-part {
   box-shadow: inset 1px 0 0 var(--surface);
 }
@@ -75,6 +80,7 @@
   background: none;
   font-size: 13px;
 }
+/* Counts and shares use same-width digits and line up on the right, so they compare down the key. */
 .key-row strong,
 .key-row small {
   font-variant-numeric: tabular-nums;
@@ -128,6 +134,7 @@ article .ranked-bars {
   font-size: 13px;
   text-align: left;
 }
+/* The picked row keeps dark text on a light tint with a green edge, like the key rows above. */
 .bar-row[aria-pressed="true"],
 .bar-row[aria-pressed="true"]:hover {
   color: var(--text);
@@ -138,6 +145,7 @@ article .ranked-bars {
   min-width: 0;
   line-height: 1.35;
 }
+/* A small pill after a label for an extra note, and a grey line under it for detail. */
 .bar-tag {
   margin-left: 6px;
   padding: 0 6px;
@@ -158,6 +166,7 @@ article .ranked-bars {
   background: var(--line);
   overflow: hidden;
 }
+/* Even the smallest count keeps a 2px sliver of bar, so it never looks like zero. */
 .bar-fill {
   display: block;
   height: 100%;
@@ -174,7 +183,7 @@ article .ranked-bars {
   color: var(--text-muted);
 }
 
-/* Narrow screens: the label sits above its bar. */
+/* Narrow screens: the label sits above its bar, and the key becomes one column. */
 @media (max-width: 650px) {
   .charts {
     grid-template-columns: minmax(0, 1fr);
@@ -197,6 +206,8 @@ article .ranked-bars {
   height: 30px;
   margin-top: 8px;
 }
+/* The drawing stretches to the card's width; non-scaling-stroke keeps the line the same
+   thickness however far it stretches. */
 .sparkline polyline {
   fill: none;
   stroke: #5c8f45;
@@ -208,6 +219,7 @@ article .ranked-bars {
 .sparkline polyline.faint {
   stroke: #aec7a2;
 }
+/* An invisible dot on each day: hovering it shows that day's value and lights the dot. */
 .sparkline .hover-point {
   fill: transparent;
 }

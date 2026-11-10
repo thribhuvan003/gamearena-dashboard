@@ -5,11 +5,13 @@ from datetime import date, datetime, timezone
 from shared.dates import date_window, page_number, percent, recent_start
 
 
+# The helpers that turn the page's address into dates, pages and shares.
 class DateTests(unittest.TestCase):
     def test_empty_period_has_no_percentage(self):
         self.assertIsNone(percent(0, 0))
 
     def test_end_date_is_inclusive_across_month_boundary(self):
+        # The range ends at midnight after the last day, here across the end of February.
         window = date_window("2026-02-01", "2026-02-28")
         self.assertEqual(window["end"], datetime(2026, 3, 1, tzinfo=timezone.utc))
 
@@ -20,6 +22,7 @@ class DateTests(unittest.TestCase):
 
     def test_recent_start_is_30_days_ending_at_the_latest_date(self):
         self.assertEqual(recent_start(date(2026, 8, 3), date(2026, 10, 17)), date(2026, 9, 18))
+        # With less than 30 days of data, the range starts on the first date.
         self.assertEqual(recent_start(date(2026, 10, 10), date(2026, 10, 17)), date(2026, 10, 10))
 
     def test_page_must_be_positive(self):

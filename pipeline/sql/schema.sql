@@ -7,12 +7,15 @@ CREATE TABLE IF NOT EXISTS session_analysis (
     first_seen TIMESTAMPTZ,
     events INT8 NOT NULL,
     attempts INT8 NOT NULL,
+    -- Connection errors before the session first ended, and those after it (retries of a closed session).
     failures INT8 NOT NULL,
     failures_after_end INT8 NOT NULL,
     last_failure TIMESTAMPTZ,
     last_success TIMESTAMPTZ,
     first_success TIMESTAMPTZ,
+    -- Time to video sent with the first success, in milliseconds. Empty when that success sent none.
     first_ready_ms FLOAT8,
+    -- Code, stage and phase of the latest real failure, such as "500 / Session / pre-connect".
     failure_detail STRING,
     host_connects INT8 NOT NULL,
     client_connects INT8 NOT NULL,
@@ -28,11 +31,15 @@ CREATE TABLE IF NOT EXISTS session_analysis (
     streamed_seconds INT8 NOT NULL,
     low_fps_seconds INT8 NOT NULL,
     high_skip_seconds INT8 NOT NULL,
+    -- Sum and count of valid frame-rate readings. Adding these across days gives a true average.
     fps_sum FLOAT8 NOT NULL,
     fps_valid INT8 NOT NULL,
     fps_mean FLOAT8,
+    -- The reason line: how the session ended up, in words.
     why STRING NOT NULL,
+    -- Every group the session is in. The inverted index lets a filter find sessions by tag.
     tags STRING[] NOT NULL,
+    -- Which version of the rules tagged this row (see rules_version in pipeline/job.py).
     rules_version STRING NOT NULL,
     processed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     INVERTED INDEX session_analysis_tags (tags)
@@ -86,6 +93,7 @@ CREATE TABLE IF NOT EXISTS session_day_error_events (
 
 -- How far the pipeline has read, so the next run only looks at new data.
 CREATE TABLE IF NOT EXISTS processor_state (
+    -- "sessions" is the last finished run, "pending" the run in progress.
     name STRING PRIMARY KEY,
     events_until TIMESTAMPTZ,
     stats_until TIMESTAMPTZ,

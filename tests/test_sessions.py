@@ -20,8 +20,11 @@ def popup(errors):
         return Client().get(SESSION).json()
 
 
+# The session pop-up: its duration, its tags and reason, and how its API treats bad input.
 class SessionTests(unittest.TestCase):
     def test_duration_needs_both_ends_in_order(self):
+        # Both ends in order give a duration; no end uses the last event as a minimum; an end
+        # before the start gives none.
         self.assertEqual(enrich_session({"started_at": START, "ended_at": START + timedelta(minutes=2)})
                          ["duration_seconds"], 120)
         self.assertIsNone(enrich_session({"started_at": START})["duration_seconds"])
@@ -31,17 +34,18 @@ class SessionTests(unittest.TestCase):
                           ["duration_seconds"])
 
     def test_tags_and_reason_come_from_the_pipeline(self):
-        stored = {"tags": ["tried", "no_success", "owner"], "why": "No error reported: the host never joined"}
+        stored = {"tags": ["tried", "no_success", "owner"], "why": "No failure report: the host never joined"}
         row = enrich_session({"started_at": START}, stored)
         self.assertEqual(row["tags"], ["Never connected", "Owner joined"])
         self.assertEqual(row["why"], stored["why"])
         self.assertEqual(enrich_session({"started_at": START})["tags"], [])
 
     def test_outcome_tags_are_not_repeated_beside_the_reason(self):
-        stored = {"tags": ["no_success", "outcome_silent", "no_later_success"], "why": "No error reported: x"}
+        stored = {"tags": ["no_success", "outcome_silent", "no_later_success"], "why": "No failure report: x"}
         self.assertEqual(enrich_session({"started_at": START}, stored)["tags"], ["Never connected"])
 
     def test_invalid_page_or_filter_never_reaches_database(self):
+        # Page 0 and an over-long filter are broken links, turned away before any query.
         client = Client()
         for params in ({"page": "0"}, {"level": "x" * 101}):
             with patch("shared.db.query") as query:
@@ -77,6 +81,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(Client().post(SESSION).status_code, 405)
 
     def test_empty_page_keeps_the_total(self):
+        # A page past the end still carries the total, so the pop-up knows how many there are.
         with patch("shared.db.query", return_value=[{"total": 42, "item": None}]):
             response = Client().get(SESSION + "buckets/", {"page": "3"})
         self.assertEqual(response.json()["total"], 42)

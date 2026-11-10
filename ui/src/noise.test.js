@@ -27,6 +27,7 @@ test("countNoise: 1,000 to 1,300 sessions is a change", () => {
   assert.equal(changed(1000, 1300, countNoise(1000, 1300)), true);
 });
 
+// Builds a trend from plain numbers, one day each, under the field name "value".
 const days = (values) => values.map((value) => ({ value }));
 
 test("dailyNoise: under 8 days of history gives 0", () => {
@@ -45,6 +46,8 @@ test("dailyNoise: a steady number has no noise", () => {
 test("dailyNoise: a number that jumps around has noise, less over longer periods", () => {
   const trend = days(Array.from({ length: 28 }, (_, i) => (i % 2 ? 12 : 10)));
   const oneDay = dailyNoise(trend, "value", 1);
+  // Every day moves by 2, so one day's spread is 2 / 1.128; one day against one day
+  // multiplies it by the root of 2.
   assert.ok(Math.abs(oneDay - 2.58 * (2 / 1.128) * Math.sqrt(2)) < 1e-9);
   assert.ok(dailyNoise(trend, "value", 7) < oneDay);
 });

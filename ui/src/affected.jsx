@@ -7,7 +7,8 @@ import { SessionDetail } from "./sessions";
 import { RankedBars, reasonColour } from "./charts";
 import { useCopy } from "./share";
 
-// Quality lists need the stream numbers; connection lists need how far the session got.
+// The cards about stream quality. Their lists show stream numbers instead of how far each
+// session got, and leave out the "How far these sessions got" chart. Connection lists need it.
 const QUALITY = new Set([
   "fps",
   "low_fps",
@@ -44,6 +45,8 @@ const NOTES = {
     "The session's most frequent error before it ended, exactly as the app sent it: event, code, stage, phase and its text. ×N is how many times.",
 };
 
+// The session open in the address bar, if any. Only something shaped like a session ID is
+// used, so a mistyped or edited link opens nothing rather than a broken pop-up.
 function sessionInUrl() {
   const id = readUrl().session || "";
   return /^[0-9a-f-]{36}$/.test(id) ? id : null;
@@ -92,6 +95,8 @@ function mainError(row) {
   );
 }
 
+// How each column shows one row. A dash means no value; that is also how a column that is
+// empty on every row is spotted and left out.
 const COLUMNS = {
   Started: (row) => <span className="nowrap">{utcTime(row.first_seen)}</span>,
   Streamed: (row) => minutes(row, "streamed_seconds"),
@@ -151,12 +156,17 @@ export function AffectedSessions({
     setSessionState(id);
     writeUrl({ session: id });
   }
+  // Back and Forward change the address without reloading; follow them so the pop-up opens or
+  // closes to match.
   useEffect(() => {
     const follow = () => setSessionState(sessionInUrl());
     window.addEventListener("popstate", follow);
     return () => window.removeEventListener("popstate", follow);
   }, []);
+  // Which row's Copy ID was pressed and how it went, so only that row's button changes.
   const [copied, copy] = useCopy();
+  // Sessions with readings but no activity events have nothing for the pop-up to show, so
+  // their rows do not open.
   const opens = category !== "stats_only";
   // The search box follows the search in use, so Back or a new card clears it too.
   const [find, setFind] = useState(search);
@@ -173,10 +183,12 @@ export function AffectedSessions({
       className={busy ? "updating" : undefined}
       aria-busy={Boolean(busy)}
     >
+      {/* While the list reloads it dims, and screen readers are told it is busy. */}
       <h2 className="panel-title">
         {group.title}: {number(group.count)}
       </h2>
       <p>{group.definition}</p>
+      {/* When the card that opened this list has a different title from the list, name that card. */}
       {from && from !== group.title && (
         <p className="scope">From the &quot;{from}&quot; card.</p>
       )}
@@ -204,7 +216,9 @@ export function AffectedSessions({
         </>
       )}
 
+      {/* Above the table: how the list is ordered, and a search by session ID. */}
       <div className="list-toolbar">
+        {/* The chosen sort in words, or the server's own default order when none is chosen. */}
         <p>
           {sort.key
             ? `Sorted by ${Object.keys(SORTS).find((label) => SORTS[label] === sort.key)}, ${sort.order === "desc" ? "highest first" : "lowest first"}.`
@@ -214,6 +228,7 @@ export function AffectedSessions({
           className="search-form"
           role="search"
           onSubmit={(event) => {
+            // Searches only on Find or Enter, not on every key, in lower case to match how IDs are written.
             event.preventDefault();
             onSearch(find.trim().toLowerCase());
           }}
@@ -234,6 +249,8 @@ export function AffectedSessions({
           <thead>
             <tr>
               {["Session ID", ...columns].map((label) => {
+                // Sortable columns get a button in the heading. The arrow shows the current
+                // order, and aria-sort tells screen readers the same thing.
                 const sorted = SORTS[label] && sort.key === SORTS[label];
                 let arrow = " ↕";
                 if (sorted) arrow = sort.order === "desc" ? " ▼" : " ▲";
@@ -270,6 +287,7 @@ export function AffectedSessions({
                   </th>
                 );
               })}
+              {/* The Open column needs no visible heading, but screen readers still hear one. */}
               <th scope="col">
                 <span className="visually-hidden">Open</span>
               </th>
@@ -278,9 +296,11 @@ export function AffectedSessions({
           <tbody>
             {sessions.items.map((row) => {
               const id = row.session_id;
+              // Only the row whose ID was just copied shows the result; every other row says Copy ID.
               const copyLabel =
                 (copied.key === id && copied.status) || "Copy ID";
               return (
+                // The whole row opens the session; the open one stays highlighted.
                 <tr
                   key={id}
                   className={
@@ -300,6 +320,7 @@ export function AffectedSessions({
                         type="button"
                         className="copy-id"
                         onClick={(event) => {
+                          // Copying should not also open the row it sits in.
                           event.stopPropagation();
                           copy(id);
                         }}
@@ -328,6 +349,7 @@ export function AffectedSessions({
                         aria-haspopup="dialog"
                         aria-label={`Open session ${id.slice(0, 8)}`}
                         onClick={(event) => {
+                          // The row would open it too; stopping here opens it once.
                           event.stopPropagation();
                           openSession(id);
                         }}
@@ -342,6 +364,7 @@ export function AffectedSessions({
           </tbody>
         </table>
       </div>
+      {/* An empty list says why: a search that matched nothing, or no sessions at all. */}
       {!sessions.items.length && (
         <p>
           {search
@@ -357,6 +380,8 @@ export function AffectedSessions({
         noun="session"
       />
 
+      {/* The pop-up for the open session. Keyed by ID, so opening another session starts it fresh
+          instead of carrying over the last one's tab, filters and page. */}
       {session && (
         <SessionDetail
           key={session}

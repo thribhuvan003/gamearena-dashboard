@@ -13,11 +13,15 @@ from pipeline.rules import (
     error_words, groups, outcome, summary, tags)
 from shared.db import QUERIES
 
+# The totals row of a period with no sessions; each test overrides what it needs.
 TOTALS = {"sessions": 0, "stats_only": 0, "streamed_seconds": 0, "low_fps_seconds": 0,
           "fps_sum": 0, "fps_valid": 0, "ready_p50": None, "ready_p90": None}
+# One measurement row as impact_measures returns it.
 MEASURE = {"average": 25.0, "readings": 60, "sessions": 3, "typical": 20.0, "high_tenth": 40.0, "low_tenth": 10.0}
+# A one-day selection, the default for the API tests.
 DAY = {"start": "2026-10-01", "end": "2026-10-01"}
 OUTCOME_KEYS = [key for key, _, _ in OUTCOMES]
+# A moment after START, for facts that must come in order.
 LATER = START + timedelta(seconds=5)
 
 # Every branch of outcome() and why(): the facts, the outcome they must give and the reason line.
@@ -39,15 +43,15 @@ CASES = [
     ("never tried", dict(), "outcome_not_tried", "Never tried to connect"),
     ("only errors after the end", dict(failures_after_end=2), "outcome_not_tried", "Never tried to connect"),
     ("video connection failed", dict(attempts=1, webrtc_failures=1, host_connects=1, client_connects=1),
-     "outcome_silent", "No error reported: the video connection failed"),
+     "outcome_silent", "No failure report: the video connection failed"),
     ("neither joined", dict(attempts=1), "outcome_silent",
-     "No error reported: neither the player nor the host joined"),
+     "No failure report: neither the player nor the host joined"),
     ("host never joined", dict(attempts=1, client_connects=1), "outcome_silent",
-     "No error reported: the host never joined"),
+     "No failure report: the host never joined"),
     ("player never joined", dict(attempts=1, host_connects=1), "outcome_silent",
-     "No error reported: the player never joined"),
+     "No failure report: the player never joined"),
     ("both joined, no video", dict(attempts=1, host_connects=1, client_connects=1), "outcome_silent",
-     "No error reported: both joined but video never started"),
+     "No failure report: both joined but video never started"),
     ("readings but no events", dict(events=0, batches=1), "stats_only", "Sent readings but no activity events"),
 ]
 
@@ -68,6 +72,7 @@ def asked(batch, **params):
     return response, batch.call_args.args[0] if batch.called else None
 
 
+# The rules in pipeline/rules.py, run on made-up sessions built by helpers.session().
 class RuleTests(unittest.TestCase):
     def test_every_connected_session_counts_as_tried(self):
         # A success with its attempt event lost still counts as a try, so connected never exceeds tried.
@@ -82,6 +87,7 @@ class RuleTests(unittest.TestCase):
         self.assertEqual((rows[0]["events"], rows[0]["streamed_seconds"]), (3, 1800))
 
     def test_stats_without_events_stay_out_of_session_counts(self):
+        # a has events and readings, b only events, c only readings.
         rows = combine_sessions([[{"session_id": "a", "events": 1, "batches": 1},
                                   {"session_id": "b", "events": 1},
                                   {"session_id": "c", "batches": 1, "streamed_seconds": 60}]])
@@ -98,6 +104,7 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(rows[0]["fps_mean"], 19)
 
     def test_idle_30_fps_is_not_below_30(self):
+        # Exactly 30 FPS is an idle desktop, not low. One low second is a dip without a low average.
         idle = groups(session(fps_sum=300, fps_valid=10))
         self.assertFalse(idle["low_fps"])
         self.assertFalse(idle["any_low_fps"])
@@ -211,6 +218,7 @@ class RuleTests(unittest.TestCase):
         self.assertIn("no_end", tags(session()))
 
     def test_a_session_that_never_connected_gets_exactly_its_tags(self):
+        # The full tag list, so a rule that starts tagging something new shows up here.
         found = tags(session(attempts=2, failures=1, last_failure=START, reconnects=1, owner_joins=1))
         self.assertEqual(set(found), {"tried", "failure", "no_later_success", "no_success", "repeated_attempts",
                                       "missing_stats", "reconnected", "owner", "no_end", "outcome_failed"})
@@ -219,6 +227,7 @@ class RuleTests(unittest.TestCase):
 class GuardTests(unittest.TestCase):
     # Lists that must stay in step with DEFINITIONS when a card is added or renamed.
     def test_every_card_has_a_rule(self):
+        # Sessions with and without events both give an answer for every group.
         self.assertEqual(set(groups(session())), set(DEFINITIONS))
         self.assertEqual(set(groups(session(events=0))), set(DEFINITIONS))
 
@@ -230,6 +239,7 @@ class GuardTests(unittest.TestCase):
         self.assertFalse(set(placed) & NOT_FILTERS)
 
     def test_share_bases_name_known_cards_once(self):
+        # Each share base lists real groups, and no group is out of two bases at once.
         bases = (OF_ATTEMPTED, OF_CONNECTED, OF_MEASURED)
         for base in bases:
             self.assertLessEqual(base, set(DEFINITIONS))
@@ -250,6 +260,7 @@ class GuardTests(unittest.TestCase):
                 self.assertIn("x.after_end = (%(error_after_end)s = '1')", QUERIES[name])
 
 
+# Card numbers and shares worked out from the query rows.
 class SummaryTests(unittest.TestCase):
     def test_low_fps_time_share_uses_streamed_time(self):
         result = summary({}, {**TOTALS, "sessions": 1, "streamed_seconds": 3600, "low_fps_seconds": 360})
@@ -278,9 +289,11 @@ class SummaryTests(unittest.TestCase):
         self.assertIsNone(result["low_fps_time_share"])
 
 
+# /api/impact/ with db.batch mocked: which queries it asks for and what it returns.
 @patch("shared.db.batch")
 class ImpactApiTests(unittest.TestCase):
     def test_low_fps_list_asks_for_the_worst_sessions_first(self, batch):
+        # The card's own order is named for the page, and the list asks for the first page of 25.
         batch.return_value = stored(listed=[{"session_id": "b", "fps_mean": 5, "why": "Connected"}])
         response, queries = asked(batch, category="low_fps")
         self.assertEqual(response.json()["sessions"]["order"], "Lowest average FPS first")
@@ -315,6 +328,7 @@ class ImpactApiTests(unittest.TestCase):
         self.assertEqual(asked(batch)[0]["Cache-Control"], "no-store")
 
     def test_previous_comes_from_the_earlier_period_rows(self, batch):
+        # The earlier period's numbers come only from its own rows, never from the selected period's.
         earlier = {**MEASURE, "average": 99.0}
         batch.return_value = stored(tagged=[{"tag": "low_fps", "sessions": 1}], totals={"sessions": 2},
                                     measures=[{"measure": "latency", **MEASURE}],
@@ -372,6 +386,7 @@ class ImpactApiTests(unittest.TestCase):
                 self.assertEqual({name: query[name] for name in ERROR_KEYS}, picked)
 
     def test_a_broken_error_filter_never_reaches_the_database(self, batch):
+        # A code or reason without an event, an odd after_end or over-long text is a broken link.
         for bad in ({"error_code": "500"}, {"error_reason": "x"}, {"error_after_end": "1"},
                     {"error_event": "x", "error_after_end": "yes"}, {"error_event": "x" * 301},
                     {"error_event": "x", "error_reason": "x" * 301}):
@@ -380,6 +395,7 @@ class ImpactApiTests(unittest.TestCase):
         batch.assert_not_called()
 
     def test_a_list_sorts_by_a_known_column_only(self, batch):
+        # A sort is a fixed column name, so text such as SQL can never reach the query.
         batch.return_value = stored()
         response, queries = asked(batch, category="all", sort="wait", order="asc")
         self.assertEqual(response.status_code, 200)
@@ -390,6 +406,7 @@ class ImpactApiTests(unittest.TestCase):
         batch.assert_not_called()
 
     def test_filters_reach_every_query_and_bad_ones_never_do(self, batch):
+        # Filters reach every query; "all" and unknown or over-long ones are rejected before any query.
         batch.return_value = stored()
         response, queries = asked(batch, filters="no_success,owner", reason="Connected")
         self.assertEqual(response.status_code, 200)
@@ -402,6 +419,7 @@ class ImpactApiTests(unittest.TestCase):
         batch.assert_not_called()
 
     def test_a_bad_search_gets_its_own_message(self, batch):
+        # A search mistake gets its own message, since it was typed, not from a broken link.
         response = asked(batch, category="all", search="drop table")[0]
         self.assertEqual(response.status_code, 400)
         self.assertTrue(response.json()["error"].startswith("Search:"))

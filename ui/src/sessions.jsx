@@ -95,6 +95,7 @@ const EVENTS = {
   host_disconnected: "Host left",
 };
 
+// Plain words for the server's names: who sent an event, how serious it is and a connection's role.
 const WHO_SENT = { client: "player app", host: "host", system: "server" };
 const LEVELS = { error: "Error", warn: "Warning", info: "Normal" };
 const ROLES = { client: "player", host: "host" };
@@ -107,6 +108,8 @@ function plain(names, words) {
   return [...new Set(plainNames)].join(", ");
 }
 
+// An event's plain name. The app's own event name is used when it sent one, otherwise the
+// server's event type; a name with no plain wording yet shows exactly as sent.
 function eventName(e) {
   const name = e.pipeline_event || e.event_type;
   return EVENTS[name] || name;
@@ -128,6 +131,7 @@ function clock(values) {
 function Told({ fact }) {
   const parts = [
     fact.error_code != null && "code " + fact.error_code,
+    // The plain stage name goes in brackets only when it says more than the stage itself.
     fact.stage &&
       "stage " +
         fact.stage +
@@ -141,6 +145,7 @@ function Told({ fact }) {
     fact.ready_ms != null &&
       `time to video ${number(fact.ready_ms / 1000, 1)}\u00a0s`,
   ].filter(Boolean);
+  // Nothing was sent beyond the event name, so there is no line to add under it.
   if (!fact.reason && !parts.length) return null;
   return (
     <small className="told">
@@ -167,7 +172,7 @@ function eventFact(e) {
   };
 }
 
-// What each column means, shown by its "i" button.
+// What each column of the connections table means, shown by its "i" button.
 const CONNECTION_NOTES = {
   Connection:
     'The ID the app gives each connection. A player who leaves and rejoins gets a new one, so one person can have several rows. "Not tied to a connection" holds events sent before a connection existed, such as connect tries.',
@@ -183,6 +188,7 @@ const CONNECTION_NOTES = {
   Disconnects: "How many times the player left.",
   Reconnects: "How many times the player came back.",
 };
+// The same for the stream quality summary table.
 const PERFORMANCE_NOTES = {
   Measurement:
     "What the player app measured, with the app's own field name in brackets and its unit. Units are read from the value ranges; the team should confirm them.",
@@ -195,6 +201,7 @@ const PERFORMANCE_NOTES = {
   "Seconds with no value":
     "Seconds where the value was empty or not a usable number. They are left out of the average.",
 };
+// The same for the event list.
 const EVENT_NOTES = {
   "What happened":
     "What happened, in plain words. Underneath: the app's own text in quotes, then the code, stage, phase and any state change, exactly as sent.",
@@ -222,6 +229,9 @@ const NUMERIC = new Set([
   "Seconds with no value",
 ]);
 
+// The one table used throughout the pop-up. Each cell carries its column name (data-label) so
+// that on a phone, where rows stack as cards, every value keeps its label. `tall` gives the
+// event list its own scroll box, with headings that stay in view.
 function DataTable({
   columns: allColumns,
   rows: allRows,
@@ -270,12 +280,14 @@ function DataTable({
           ))}
         </tbody>
       </table>
+      {/* An empty table says so, rather than showing headings over nothing. */}
       {!rows.length && <p>Nothing recorded for this session.</p>}
     </div>
   );
 }
 
-// A summary tile. Tiles with an action open the matching events below.
+// A summary tile: label, number and an optional line under it. When a tile has an action, its
+// number becomes a button that opens the matching events below.
 function Tile({ label, value, onOpen, info, sub }) {
   return (
     <div className="panel">
@@ -295,7 +307,10 @@ function Tile({ label, value, onOpen, info, sub }) {
   );
 }
 
+// Where this browser remembers whether Technical details is on.
 const TECHNICAL_KEY = "gamearena.technical";
+// The sections under the summary, as [name used in the code, label]. Connections only shows
+// with technical details on.
 const TABS = [
   ["events", "What happened"],
   ["performance", "Stream quality"],
@@ -332,6 +347,7 @@ function verdict(metrics, batches) {
 }
 
 // The few stream numbers a founder can act on, each with its average and one telling extreme.
+// Each entry: measurement, tile label, unit after the average, and the line under it.
 const QUALITY_TILES = [
   [
     "fps",
@@ -374,6 +390,7 @@ function EventTable({ items, technical }) {
   const { day, time } = clock(items.map((e) => e.recorded_at));
   return (
     <>
+      {/* When every event falls on one day, the date is said once here and rows show only the time. */}
       {day && <p className="table-note">All on {day} (UTC).</p>}
       <DataTable
         label="Session events"
@@ -402,6 +419,7 @@ function EventTable({ items, technical }) {
             ? [
                 <code>{e.pipeline_event || e.event_type}</code>,
                 e.connection_id || "—",
+                // The raw message folds away on every row; it can run to many lines.
                 <details>
                   <summary>Show</summary>
                   <pre className="raw-event">
@@ -449,10 +467,12 @@ function SessionErrors({ errors, onShow }) {
             <span className="error-count">{number(e.events)}×</span>
             <div>
               <strong>{eventName(e)}</strong>
+              {/* Errors logged after the server closed the session are marked: they could not have ended it. */}
               {e.after_end && (
                 <span className="chip">after the session ended</span>
               )}
               <Told fact={e} />
+              {/* One time if every copy came at once, otherwise the first and last time. */}
               <small>
                 {e.first_at === e.last_at
                   ? time(e.first_at)
@@ -467,6 +487,8 @@ function SessionErrors({ errors, onShow }) {
   );
 }
 
+// The session's length for the Duration tile. With no end recorded the server measures to the
+// last event, so the tile says the real length could be longer.
 function duration(row) {
   if (row.duration_seconds == null) return "—";
   const minutes = number(row.duration_seconds / 60, 1) + " min";
@@ -487,6 +509,7 @@ export function SessionDetail({ id, onClose }) {
   });
   function showTechnical(on) {
     setTechnical(on);
+    // The Connections tab only exists with technical details, so switching off leaves it.
     if (!on)
       setTab((current) => (current === "connections" ? "events" : current));
     try {
@@ -495,17 +518,23 @@ export function SessionDetail({ id, onClose }) {
       // Private windows can block storage; the switch still works for this visit.
     }
   }
+  // "Copied" or "Couldn't copy" shows on the Copy ID button for a moment.
   const [{ status: copied }, copy] = useCopy();
+  // The open section, the event filters and the page of the paged list. Changing the section
+  // or a filter always goes back to page 1, since the old page number may no longer exist.
   const [tab, setTab] = useState("events");
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(1);
+  // The section switches, so a tile can scroll the list into view.
   const tabs = useRef(null);
 
   // Always the whole session, whatever dates the page has selected.
   const result = useReport("sessions/" + id, {});
   const detail = result.data;
   const row = detail?.session;
-  // Connections come with the summary, and a session without stats has no batches to page.
+  // Only the event list and the 10-second groups load a page at a time. Connections come with
+  // the summary. The 10-second groups only show with technical details, so they load only then,
+  // and a session without stats has no groups to load. No name means nothing is fetched.
   const pagedName = {
     events: "sessions/" + id + "/events",
     performance:
@@ -514,12 +543,16 @@ export function SessionDetail({ id, onClose }) {
   const list = useReport(pagedName, { ...filters, page });
   const dialog = useRef(null);
 
-  // Opens as a pop-up over the list. Esc, the Close button or a click outside closes it.
+  // Opens as a pop-up over the list as soon as it appears, and puts focus on its title so
+  // keyboard and screen reader users start at the top. Esc, the Close button or a click outside
+  // closes it, and closing tells the list through onClose.
   useEffect(() => {
     dialog.current?.showModal();
     dialog.current?.querySelector("h2")?.focus();
   }, []);
 
+  // Used by the errors box and the Warnings tile: switch to the event list, filtered to that
+  // level (or not filtered), from the first page, and scroll down to it.
   function showEvents(level) {
     setTab("events");
     setFilters(level ? { level } : {});
@@ -533,6 +566,8 @@ export function SessionDetail({ id, onClose }) {
     setPage(1);
   }
 
+  // A click on the dimmed backdrop is reported as a click on the dialog itself, so
+  // clickedOutside checks whether it landed outside the box before closing.
   return (
     <dialog
       ref={dialog}
@@ -544,6 +579,7 @@ export function SessionDetail({ id, onClose }) {
       }}
     >
       <header className="detail-head">
+        {/* The title shows the ID's first 8 characters; hovering shows it in full and Copy ID copies all of it. */}
         <h2 tabIndex={-1} className="panel-title">
           Session{" "}
           <code className="session-id" title={id}>
@@ -553,6 +589,7 @@ export function SessionDetail({ id, onClose }) {
         <button type="button" className="copy-id" onClick={() => copy(id)}>
           {copied || "Copy ID"}
         </button>
+        {/* Off by default. On, it adds the app's raw event names and messages, the connections and the 10-second stream table. */}
         <label className="switch">
           <input
             type="checkbox"
@@ -569,10 +606,13 @@ export function SessionDetail({ id, onClose }) {
           Close
         </button>
       </header>
+      {/* Loading or error message for the session summary; everything below waits for it. */}
       <Notice {...result} />
 
       {detail && (
         <>
+          {/* The outcome the pipeline stored for this session ("Not worked out yet" until it has
+              processed it), then how the server says it ended. */}
           <p className="detail-story">
             <strong>{row.why || "Not worked out yet"}</strong>
             {row.end_reason &&
@@ -588,6 +628,7 @@ export function SessionDetail({ id, onClose }) {
             errors={detail.errors}
             onShow={() => showEvents("error")}
           />
+          {/* The three numbers that matter most. Time to video only shows if video ever started. */}
           <div className="metric-grid">
             {row.first_ready_ms != null && (
               <Tile
@@ -608,6 +649,7 @@ export function SessionDetail({ id, onClose }) {
             />
           </div>
           <p className="verdict">{verdict(detail.metrics, row.batches)}</p>
+          {/* The rest of the numbers fold away, so the story and the key numbers stay short. */}
           <details>
             <summary>More numbers</summary>
             <div className="metric-grid">
@@ -654,12 +696,14 @@ export function SessionDetail({ id, onClose }) {
               />
             </div>
           </details>
+          {/* For engineers: the tags the pipeline stored, which decide which cards count this session. */}
           {technical && (
             <p className="technical-note">
               Appears in: {row.tags.join(" · ") || "—"}
             </p>
           )}
 
+          {/* Section switches. Picking one starts its list from the first page. */}
           <div
             className="tabs"
             role="group"
@@ -713,6 +757,7 @@ export function SessionDetail({ id, onClose }) {
                     onChange={filterEvents}
                   >
                     <option value="">All</option>
+                    {/* Only the senders that appear in this session, so no choice leads to an empty list. */}
                     {[
                       ...new Set(
                         detail.connections
@@ -726,6 +771,8 @@ export function SessionDetail({ id, onClose }) {
                     ))}
                   </select>
                 </label>
+                {/* Connection IDs mean nothing outside engineering, so this filter is technical only.
+                    "missing" asks for the events sent before any connection existed. */}
                 {technical && (
                   <label>
                     Connection
@@ -746,6 +793,7 @@ export function SessionDetail({ id, onClose }) {
                   </label>
                 )}
               </div>
+              {/* Loading or error message for this page of events, then the events once they arrive. */}
               <Notice {...list} />
               {list.data && (
                 <EventTable items={list.data.items} technical={technical} />
@@ -753,6 +801,8 @@ export function SessionDetail({ id, onClose }) {
             </>
           )}
 
+          {/* One row per connection, from the summary already loaded. Also checks technical, in case
+              the tab was open when the switch went off. */}
           {tab === "connections" && technical && (
             <DataTable
               label="Session connections"
@@ -784,12 +834,15 @@ export function SessionDetail({ id, onClose }) {
             />
           )}
 
+          {/* Stream quality: tiles for everyone, the full tables with technical details, and a
+              plain sentence when the app sent no readings at all. */}
           {tab === "performance" &&
             (row.batches ? (
               <>
                 <div className="metric-grid">
                   {QUALITY_TILES.map(([name, label, unit, describe]) => {
                     const m = detail.metrics.find((m) => m.metric === name);
+                    // A measurement the app never sent gets no tile, rather than one full of dashes.
                     if (!m) return null;
                     return (
                       <Tile
@@ -848,6 +901,7 @@ export function SessionDetail({ id, onClose }) {
                         rows={list.data.items.map((b) => [
                           utcTime(b.bucket_start, true),
                           utcTime(b.bucket_end, true),
+                          // Every measurement gets a column in the same order; one missing from a group shows a dash.
                           ...Object.keys(MEASUREMENTS).map((name) =>
                             b.metrics?.[name]
                               ? number(b.metrics[name].mean, 1)
@@ -866,6 +920,7 @@ export function SessionDetail({ id, onClose }) {
               </p>
             ))}
 
+          {/* Page buttons only for the lists that load a page at a time, named for what they page through. */}
           {pagedName && (
             <Pages
               data={list.data}

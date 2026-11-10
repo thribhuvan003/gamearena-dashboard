@@ -6,8 +6,10 @@ import React, { useEffect, useRef, useState } from "react";
 export function useCopy() {
   const [result, setResult] = useState({ key: null, status: "" });
   const timer = useRef(null);
+  // A pending reset is cancelled if the button goes away, so it never updates a gone component.
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // Shows a result, then clears it after two seconds. A second copy restarts the clock.
   function show(key, status) {
     setResult({ key, status });
     clearTimeout(timer.current);
@@ -30,6 +32,7 @@ export function useCopy() {
   return [result, copy];
 }
 
+// Everything the button can say; the first is what it says when nothing has happened.
 const LABELS = ["Copy link", "Copied", "Couldn't copy"];
 
 // Copies the page's address. The address already holds the dates, filters and open list,

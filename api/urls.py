@@ -12,7 +12,9 @@ urlpatterns = [
     path("", index),
     path("api/range/", date_range),
     path("api/impact/", impact),
+    # <uuid:...> turns away anything that is not a session ID before a query runs.
     path("api/sessions/<uuid:session_id>/", sessions),
     path("api/sessions/<uuid:session_id>/<str:section>/", sessions),
+    # The page's built scripts and styles, straight from ui/dist/assets.
     re_path(r"^assets/(?P<path>.*)$", serve, {"document_root": DIST / "assets"}),
 ]
