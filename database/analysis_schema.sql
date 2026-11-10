@@ -55,6 +55,33 @@ CREATE TABLE IF NOT EXISTS session_day_analysis (
     INDEX session_day_analysis_session (session_id)
 );
 
+-- Sum and count of every valid per-second reading, per session, UTC day and measurement,
+-- so the dashboard can average any measurement over any dates without reading raw stats.
+CREATE TABLE IF NOT EXISTS session_day_measures (
+    day DATE NOT NULL,
+    session_id UUID NOT NULL,
+    measure STRING NOT NULL,
+    total FLOAT8 NOT NULL,
+    readings INT8 NOT NULL,
+    PRIMARY KEY (day, session_id, measure),
+    INDEX session_day_measures_session (session_id)
+);
+
+-- Every error code with the reason the app gave, per session and UTC day, as sent and unchanged,
+-- and whether it came after the session had already ended (a retry of a closed session).
+DROP TABLE IF EXISTS session_day_errors;
+CREATE TABLE IF NOT EXISTS session_day_error_reasons (
+    day DATE NOT NULL,
+    session_id UUID NOT NULL,
+    event STRING NOT NULL,
+    code STRING NOT NULL,
+    reason STRING NOT NULL,
+    after_end BOOL NOT NULL,
+    events INT8 NOT NULL,
+    PRIMARY KEY (day, session_id, event, code, reason, after_end),
+    INDEX session_day_error_reasons_session (session_id)
+);
+
 -- How far the processor has read, so the next run only looks at new data.
 CREATE TABLE IF NOT EXISTS processor_state (
     name STRING PRIMARY KEY,

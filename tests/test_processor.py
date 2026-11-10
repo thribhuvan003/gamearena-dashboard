@@ -17,6 +17,10 @@ REPORTS = {
     "process_errors": [{"session_id": ID, "day": date(2026, 10, 2), "error_types": ["ice.candidate.error"],
                         "error_stages": ["Video"]}],
     "process_batches": [{"session_id": ID, "day": date(2026, 10, 1), "batches": 2}],
+    "process_error_reasons": [{"session_id": ID, "day": date(2026, 10, 2), "event": "ice.candidate.error",
+                               "code": "701", "reason": "test reason", "after_end": False, "events": 2}],
+    "process_measures": [{"session_id": ID, "day": date(2026, 10, 1), "measure": "fps", "total": 1200.0,
+                          "readings": 20}],
     "process_seconds": [{"session_id": ID, "day": date(2026, 10, 1), "streamed_seconds": 20,
                          "low_fps_seconds": 0, "high_skip_seconds": 0, "fps_sum": 1200.0, "fps_valid": 20}],
 }
@@ -39,7 +43,7 @@ class ProcessorTests(unittest.TestCase):
 
     def test_one_session_row_and_one_row_per_day(self):
         cursor = self.run_batch()
-        days, sessions = (call.args[1] for call in cursor.executemany.call_args_list)
+        days, sessions, _, _ = (call.args[1] for call in cursor.executemany.call_args_list)
         self.assertEqual(sorted(day["day"] for day in days), [date(2026, 10, 1), date(2026, 10, 2)])
         self.assertEqual(sum(day["events"] for day in days), 5)
         self.assertEqual(len(sessions), 1)

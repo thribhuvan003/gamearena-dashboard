@@ -81,6 +81,10 @@ SELECT session_id, day, COUNT(*) AS events, MIN(recorded_at) AS first_seen,
         AND payload->>'state' IN ('disconnected', 'failed')) AS stream_drops,
     COUNT(*) FILTER (WHERE event_type = 'client_reconnected') AS reconnects,
     COUNT(*) FILTER (WHERE event_type = 'ws_error') AS channel_errors,
+    COUNT(*) FILTER (WHERE name = 'ws.disconnect') AS channel_drops,
+    COUNT(*) FILTER (WHERE name = 'ws.reconnect.success') AS channel_recoveries,
+    COUNT(*) FILTER (WHERE name = 'ice.restart') AS route_restarts,
+    COUNT(*) FILTER (WHERE name = 'session.recreate') AS recreations,
     COUNT(*) FILTER (WHERE event_type = 'session_ended') AS ends,
     -- How it ended. Only these three fixed values are read.
     COUNT(*) FILTER (WHERE payload->>'end_reason' = 'Device deleted') AS device_deleted_ends,
@@ -91,7 +95,8 @@ SELECT session_id, day, COUNT(*) AS events, MIN(recorded_at) AS first_seen,
     COUNT(*) FILTER (WHERE payload->>'mode' = 'share') AS share_joins,
     COUNT(*) FILTER (WHERE payload->>'mode' IN ('external', 'external_session')) AS external_joins,
     -- Code, stage and phase of the day's last real failure. The reason text is never read.
-    (array_agg(concat_ws(' / ', payload->>'code', payload->>'stage', payload->>'phase')
+    (array_agg(COALESCE(payload->>'code', '') || ' / ' || COALESCE(payload->>'stage', '') || ' / '
+            || COALESCE(payload->>'phase', '')
         ORDER BY recorded_at DESC)
         FILTER (WHERE name = 'pipeline.connect.failure' AND NOT after_end))[1] AS failure_detail
 FROM events
@@ -154,6 +159,55 @@ SELECT session_id, to_timestamp(second::FLOAT8)::DATE AS day, COUNT(*) AS stream
     COALESCE(SUM(fps_sum), 0)::FLOAT8 AS fps_sum, COALESCE(SUM(fps_valid), 0)::INT8 AS fps_valid
 FROM per_second
 GROUP BY session_id, to_timestamp(second::FLOAT8)::DATE;
+
+-- report: process_error_reasons
+-- Each error code with the app's own reason text, unchanged. Connection errors send "code" and
+-- "reason"; network path errors send "errorCode" and "errorText". Errors after the session first
+-- ended are kept but marked, so the page can show them apart from real errors.
+WITH ends AS (
+    SELECT session_id, MIN(recorded_at) AS ended_at
+    FROM session_telemetry_events
+    WHERE session_id = ANY(%(ids)s::UUID[]) AND event_type = 'session_ended'
+    GROUP BY session_id
+)
+SELECT e.session_id, e.recorded_at::DATE AS day, e.payload->>'event' AS event,
+    COALESCE(e.payload->>'code', e.payload->>'errorCode') AS code,
+    COALESCE(e.payload->>'reason', e.payload->>'errorText', '') AS reason,
+    COALESCE(e.recorded_at >= ends.ended_at, FALSE) AS after_end, COUNT(*) AS events
+FROM session_telemetry_events e LEFT JOIN ends ON ends.session_id = e.session_id
+WHERE e.session_id = ANY(%(ids)s::UUID[]) AND (e.payload ? 'code' OR e.payload ? 'errorCode')
+    AND e.payload->>'event' IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6;
+
+-- report: process_clear_error_reasons
+DELETE FROM session_day_error_reasons WHERE session_id = ANY(%(ids)s::UUID[]);
+
+-- report: process_save_error_reason
+INSERT INTO session_day_error_reasons (day, session_id, event, code, reason, after_end, events)
+VALUES (%(day)s, %(session_id)s, %(event)s, %(code)s, %(reason)s, %(after_end)s, %(events)s);
+
+-- report: process_measures
+-- Sum and count of every valid reading of each known measurement, per session and UTC day.
+-- A reading belongs to the day of its own timestamp, like streamed seconds.
+SELECT s.session_id, to_timestamp(((s.samples->'ts'->>i)::INT8 // 1000)::FLOAT8)::DATE AS day,
+    m.key AS measure, SUM((m.value->>i)::FLOAT8) AS total, COUNT(*) AS readings
+FROM session_telemetry_stats s
+CROSS JOIN LATERAL jsonb_each(s.samples) AS m(key, value)
+CROSS JOIN LATERAL generate_series(0, jsonb_array_length(s.samples->'ts') - 1) AS i
+WHERE s.session_id = ANY(%(ids)s::UUID[]) AND jsonb_typeof(s.samples->'ts') = 'array'
+    AND m.key IN ('fps', 'latency', 'jitter', 'bitrate', 'downloadSpeed', 'decodeDuration',
+        'encodeDuration', 'skippedFrames', 'accumulatedFrames')
+    AND jsonb_typeof(m.value) = 'array' AND jsonb_typeof(m.value->i) = 'number'
+    AND jsonb_typeof(s.samples->'ts'->i) = 'number'
+    AND (m.value->>i)::FLOAT8 >= 0 AND (m.value->>i)::FLOAT8 < 'Infinity'::FLOAT8
+GROUP BY 1, 2, 3;
+
+-- report: process_clear_measures
+DELETE FROM session_day_measures WHERE session_id = ANY(%(ids)s::UUID[]);
+
+-- report: process_save_measure
+INSERT INTO session_day_measures (day, session_id, measure, total, readings)
+VALUES (%(day)s, %(session_id)s, %(measure)s, %(total)s, %(readings)s);
 
 -- report: process_clear_days
 -- A batch replaces everything stored for its sessions, so a rerun never doubles a number.

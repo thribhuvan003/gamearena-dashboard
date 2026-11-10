@@ -65,18 +65,24 @@ def day_facts(connection, ids):
 def process_batch(connection, ids, version):
     days = day_facts(connection, ids)
     sessions = combine_sessions([days])
+    measures = read(connection, "process_measures", {"ids": ids})
+    error_reasons = read(connection, "process_error_reasons", {"ids": ids})
     queries = repository.QUERIES
     # Saving the batch and taking it off the queue happen together, so it is never done twice or lost.
     with connection.transaction(), connection.cursor() as cursor:
         cursor.execute(queries["process_dequeue"], {"ids": ids})
         cursor.execute(queries["process_clear_days"], {"ids": ids})
         cursor.execute(queries["process_clear_sessions"], {"ids": ids})
+        cursor.execute(queries["process_clear_measures"], {"ids": ids})
+        cursor.execute(queries["process_clear_error_reasons"], {"ids": ids})
         cursor.executemany(queries["process_save_day"], [
             {"day": day["day"], "session_id": day["session_id"],
              **{column: day.get(column, 0) for column in DAY_COLUMNS}} for day in days])
         cursor.executemany(queries["process_save_session"], [
             {**dict.fromkeys(OPTIONAL), **session, "tags": tags(session), "rules_version": version}
             for session in sessions])
+        cursor.executemany(queries["process_save_measure"], measures)
+        cursor.executemany(queries["process_save_error_reason"], error_reasons)
     return len(sessions)
 
 
