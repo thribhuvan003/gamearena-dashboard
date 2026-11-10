@@ -13,6 +13,9 @@ from pipeline.rules import DEFINITIONS, SECTIONS, summary
 
 # Sessions per page in a card's list.
 PAGE_SIZE = 25
+# A card's list goes no further than its first 10,000 sessions (400 pages of 25), so a page
+# number can never make the database skip past more rows than that.
+MAX_PAGES = 400
 # The trend lines cover at least this many days, ending on the last selected day.
 # Four weeks of daily values: enough to tell a real change from everyday ups and downs.
 TREND_DAYS = 28
@@ -124,6 +127,8 @@ def impact(request):
             raise ValueError("Period too long")
         filters, reason, category, error = choices(request)
         page = page_number(request.GET.get("page", "1"))
+        if page > MAX_PAGES:
+            raise ValueError("Page too far")
 
         # The filters every query gets; each period adds its own dates.
         shared = {"filters": filters, "reason": reason, **error}
@@ -165,6 +170,7 @@ def impact(request):
             reasons = [[row["reason"], row["sessions"]] for row in rows["list_reasons"]]
             # The list's total is the sum of its reasons, so the two always agree without another count.
             data["sessions"] = {"items": rows["list"], "total": sum(count for _, count in reasons),
+                                "max_pages": MAX_PAGES,
                                 "page": page, "page_size": PAGE_SIZE,
                                 "order": ORDER.get(category, "Newest first"), "reasons": reasons}
 

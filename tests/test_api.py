@@ -84,3 +84,18 @@ class PoolTests(unittest.TestCase):
         self.assertEqual(sent, ["SET TIME ZONE 'UTC'", "SET statement_timeout = '180s'"])
         self.assertTrue(connection.read_only)
         self.assertFalse(connection.autocommit)
+
+
+# Requests other websites make are refused; every API answer, errors included, is never cached.
+class GuardTests(unittest.TestCase):
+    def test_other_websites_cannot_start_queries(self):
+        with patch("shared.db.query") as query, patch("shared.db.batch") as batch:
+            response = Client().get("/api/range/", HTTP_SEC_FETCH_SITE="cross-site")
+        self.assertEqual(response.status_code, 403)
+        query.assert_not_called()
+        batch.assert_not_called()
+
+    def test_error_answers_are_never_cached(self):
+        response = Client().get("/api/impact/", {"start": "bad"}, HTTP_SEC_FETCH_SITE="same-origin")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response["Cache-Control"], "no-store")

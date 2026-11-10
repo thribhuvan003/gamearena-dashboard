@@ -1,7 +1,12 @@
 // The page shell: title, Copy link and Refresh, the date picker and the "data up to" line.
 // It renders the main page for the chosen dates.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
 import { getReport } from "./api";
 import { DailyImpact } from "./impact";
 import { Notice, dateLabel, utcTime } from "./format";
@@ -89,44 +94,37 @@ function Freshness({ range }) {
 // The whole page. It owns the dates; everything below the date picker is DailyImpact.
 function App() {
   // Which days have data, and how fresh the numbers are, as the API reports it.
-  const [range, setRange] = useState(null);
-  // The dates being shown: { start, end }, or null before they are known.
-  const [period, setPeriod] = useState(null);
-  // Which quick date button picked them, or "custom" for dates chosen by hand.
-  const [preset, setPreset] = useState("day");
-  // Goes up on every Refresh, which makes every report on the page load again.
-  const [revision, setRevision] = useState(0);
+  const rangeQuery = useQuery({
+    queryKey: ["range"],
+    queryFn: ({ signal }) => getReport("range", {}, signal),
+  });
+  const range = rangeQuery.data;
+  // True while the dates are being asked for, at opening and on Refresh.
+  const loading = rangeQuery.isFetching;
+  // Dates from a link or chosen by hand. A link with dates opens on those dates; otherwise
+  // the page opens on the latest complete day.
+  const [picked, setPicked] = useState(() => datesIn(readUrl()));
+  // Which quick date button picks the dates, or "custom" for the picked ones.
+  const [preset, setPreset] = useState(picked ? "custom" : "day");
+  // The date form's message; a failed request for the dates shows its own.
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   // The "Pick a range" boxes, kept in step with the dates shown.
   const [custom, setCustom] = useState({ start: "", end: "" });
   // Whether the dates have been put in the address bar yet this visit.
   const written = useRef(false);
 
-  // On opening, ask which dates have data, then decide which dates to show.
-  useEffect(() => {
-    const controller = new AbortController();
-    getReport("range", {}, controller.signal)
-      .then((data) => {
-        setRange(data);
-        // A link with dates opens on those dates; otherwise the latest complete day.
-        const dates = datesIn(readUrl());
-        if (dates) {
-          setPreset("custom");
-          setPeriod(dates);
-        } else if (data.end) {
-          const day = latestDay(data);
-          setPeriod({ start: day, end: day });
-        }
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) setError(error.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, []);
+  // The dates being shown: { start, end }, or null before they are known or with no data
+  // stored. A quick date button moves with the data on Refresh; picked dates stay put.
+  const moving = PRESETS.find(([key]) => key === preset)?.[2];
+  const shown = !range?.end ? null : moving ? moving(range) : picked;
+  // The same dates stay the same object, so the page below only starts over when they change.
+  const period = useMemo(
+    () => shown && { start: shown.start, end: shown.end },
+    [shown?.start, shown?.end],
+  );
+  // Changes each time the dates arrive afresh (Refresh), in the same render as the new
+  // dates, which makes every report on the page load again for them.
+  const revision = rangeQuery.dataUpdatedAt;
 
   // The dates live in the address bar too, so Back returns to the previous dates.
   // The first write replaces the entry, so opening the page adds no extra Back step.
@@ -147,7 +145,7 @@ function App() {
       )
         return;
       setPreset("custom");
-      setPeriod(dates);
+      setPicked(dates);
     }
     window.addEventListener("popstate", follow);
     return () => window.removeEventListener("popstate", follow);
@@ -157,7 +155,7 @@ function App() {
   function choose(next, selected) {
     setError("");
     setPreset(selected);
-    setPeriod({ start: next.start, end: next.end });
+    setPicked({ start: next.start, end: next.end });
   }
 
   // The "Show these dates" form. Dates the wrong way round get a message, not a request.
@@ -171,30 +169,9 @@ function App() {
   }
 
   // Refresh data: asks again which dates exist, then reloads every number on the page.
-  async function refresh() {
-    setLoading(true);
+  function refresh() {
     setError("");
-    try {
-      const next = await getReport("range");
-      setRange(next);
-      // A quick date button moves with the data; picked dates stay put.
-      const dates = PRESETS.find(([key]) => key === preset)?.[2];
-      // No data is stored any more, so there are no dates to show.
-      if (!next.end) setPeriod(null);
-      else if (dates) {
-        const moved = dates(next);
-        setPeriod((current) =>
-          current?.start === moved.start && current?.end === moved.end
-            ? current
-            : moved,
-        );
-      }
-      setRevision((value) => value + 1);
-    } catch (error) {
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
+    rangeQuery.refetch();
   }
 
   return (
@@ -289,7 +266,7 @@ function App() {
           </form>
         </details>
         <Freshness range={range} />
-        <Notice error={error} loading={loading}>
+        <Notice error={error || rangeQuery.error?.message} loading={loading}>
           Loading dates…
         </Notice>
         {/* The API answered, but the database holds no sessions yet. */}
@@ -309,4 +286,29 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+// One cache for every report on the page. The numbers are worked out again every 5 minutes, so
+// an answer counts as fresh for a minute: going back to a card or page within it shows the
+// answer without asking again, and Refresh always asks. Coming back to the tab or reconnecting
+// reloads nothing. A failed request is tried once more only when no answer came at all or the
+// server was busy (503): a 400 or 404 would get the same answer, and a 504 means a query already
+// ran its full 3 minutes, so asking again would only double the load.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      // Ask even when the browser thinks it is offline, so a lost connection shows its message
+      // instead of "Loading…" forever.
+      networkMode: "always",
+      retry: (failures, error) =>
+        failures < 1 && (error.status === undefined || error.status === 503),
+    },
+  },
+});
+
+createRoot(document.getElementById("root")).render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>,
+);

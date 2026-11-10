@@ -104,6 +104,9 @@ export function Notice({ error, loading, children }) {
 // noun is singular; nouns is only needed when adding an "s" doesn't make the plural.
 export function Pages({ data, page, onChange, busy, noun = "row", nouns }) {
   if (!data) return null;
+  // The last page there is, never past the server's page limit when it sets one.
+  const pages = Math.max(1, Math.ceil(data.total / data.page_size));
+  const last = data.max_pages ? Math.min(pages, data.max_pages) : pages;
   return (
     <div className="pager">
       <button
@@ -115,13 +118,11 @@ export function Pages({ data, page, onChange, busy, noun = "row", nouns }) {
       </button>
       {/* An empty list still reads "Page 1 of 1". */}
       <span role="status">
-        Page {page} of{" "}
-        {number(Math.max(1, Math.ceil(data.total / data.page_size)))} ·{" "}
-        {plural(data.total, noun, nouns)}
+        Page {page} of {number(last)} · {plural(data.total, noun, nouns)}
       </span>
       <button
         type="button"
-        disabled={busy || page * data.page_size >= data.total}
+        disabled={busy || page >= last}
         onClick={() => onChange(page + 1)}
       >
         Next

@@ -2,24 +2,29 @@
 -- how it saves the results. Run by pipeline/job.py.
 -- report: process_marks
 -- Where the raw data ends right now. Read once at the start of a run and saved only when the run finishes.
+-- An event stamped in the future is left out until its time comes. Otherwise it would move the
+-- saved point ahead, so sessions arriving before that time would never be queued, and the page
+-- would keep saying newer data has arrived when none has. An empty table gives no mark.
 SELECT
-    (SELECT MAX(recorded_at) FROM session_telemetry_events) AS events_until,
+    (SELECT MAX(recorded_at) FROM session_telemetry_events WHERE recorded_at <= now()) AS events_until,
     (SELECT MAX(created_at) FROM session_telemetry_stats) AS stats_until;
 
 -- report: process_lock
 -- Only one run at a time. A lock older than an hour belongs to a run that died, so it is taken over.
-INSERT INTO processor_lock (name, started_at) VALUES ('sessions', now())
-ON CONFLICT (name) DO UPDATE SET started_at = now()
+-- The token is the run's own, so only the run holding the lock can refresh or free it.
+INSERT INTO processor_lock (name, started_at, token) VALUES ('sessions', now(), %(token)s)
+ON CONFLICT (name) DO UPDATE SET started_at = now(), token = %(token)s
 WHERE processor_lock.started_at < now() - INTERVAL '1 hour'
 RETURNING name;
 
 -- report: process_lock_refresh
--- Marks the lock as fresh, so a long run is never taken for one that died.
-UPDATE processor_lock SET started_at = now() WHERE name = 'sessions';
+-- Marks the lock as fresh, so a long run is never taken for one that died. No row back means
+-- another run took the lock over.
+UPDATE processor_lock SET started_at = now() WHERE name = 'sessions' AND token = %(token)s RETURNING name;
 
 -- report: process_unlock
--- Frees the lock when a run ends, whether or not it succeeded.
-DELETE FROM processor_lock WHERE name = 'sessions';
+-- Frees the lock when a run ends, whether or not it succeeded, but only if this run still holds it.
+DELETE FROM processor_lock WHERE name = 'sessions' AND token = %(token)s;
 
 -- report: process_state
 -- "sessions" is how far the last finished run read; "pending" is the run in progress.
@@ -149,16 +154,20 @@ GROUP BY session_id, bucket_start::DATE;
 WITH readings AS (
     SELECT s.session_id,
         -- One row per reading: i walks the positions of the ts array, and the same position in fps
-        -- and skippedFrames belongs to that moment. Integer division by 1000 turns milliseconds
-        -- into whole seconds.
+        -- and skippedFrames belongs to that moment. Dividing by 1000 and rounding down turns
+        -- milliseconds into whole seconds; a time with decimals or out of range can't fail the batch.
         CASE WHEN jsonb_typeof(s.samples->'ts'->i) = 'number'
-            THEN (s.samples->'ts'->>i)::INT8 // 1000 END AS second,
+                AND (s.samples->'ts'->>i)::FLOAT8 BETWEEN 0 AND 1e15
+            THEN floor((s.samples->'ts'->>i)::FLOAT8 / 1000)::INT8 END AS second,
         CASE WHEN jsonb_typeof(s.samples->'fps'->i) = 'number'
             THEN (s.samples->'fps'->>i)::FLOAT8 END AS fps,
         CASE WHEN jsonb_typeof(s.samples->'skippedFrames'->i) = 'number'
             THEN (s.samples->'skippedFrames'->>i)::FLOAT8 END AS skipped
     FROM session_telemetry_stats s
-    CROSS JOIN LATERAL generate_series(0, jsonb_array_length(s.samples->'ts') - 1) AS i
+    -- The length is only asked of a real array; anything else gives no readings instead of
+    -- failing the batch, since the WHERE below may run after this.
+    CROSS JOIN LATERAL generate_series(0, CASE WHEN jsonb_typeof(s.samples->'ts') = 'array'
+        THEN jsonb_array_length(s.samples->'ts') ELSE 0 END - 1) AS i
     WHERE s.session_id = ANY(%(ids)s::UUID[]) AND jsonb_typeof(s.samples->'ts') = 'array'
 ), per_second AS (
     -- 30 FPS is the idle rate, so a second is low only when some connection was under it.
@@ -226,11 +235,16 @@ SELECT session_id, to_timestamp(second::FLOAT8)::DATE AS day, measure, SUM(amoun
 FROM (
     SELECT s.session_id, m.key AS measure,
         CASE WHEN jsonb_typeof(s.samples->'ts'->i) = 'number'
-            THEN (s.samples->'ts'->>i)::INT8 // 1000 END AS second,
+                AND (s.samples->'ts'->>i)::FLOAT8 BETWEEN 0 AND 1e15
+            THEN floor((s.samples->'ts'->>i)::FLOAT8 / 1000)::INT8 END AS second,
         CASE WHEN jsonb_typeof(m.value->i) = 'number' THEN (m.value->>i)::FLOAT8 END AS amount
     FROM session_telemetry_stats s
-    CROSS JOIN LATERAL jsonb_each(s.samples) AS m(key, value)
-    CROSS JOIN LATERAL generate_series(0, jsonb_array_length(s.samples->'ts') - 1) AS i
+    -- Only a real object is unpacked and only a real array is measured, so a malformed batch gives
+    -- no readings instead of failing the batch, as session_metrics in api/sql/sessions.sql does.
+    CROSS JOIN LATERAL jsonb_each(
+        CASE WHEN jsonb_typeof(s.samples) = 'object' THEN s.samples ELSE '{}'::JSONB END) AS m(key, value)
+    CROSS JOIN LATERAL generate_series(0, CASE WHEN jsonb_typeof(s.samples->'ts') = 'array'
+        THEN jsonb_array_length(s.samples->'ts') ELSE 0 END - 1) AS i
     WHERE s.session_id = ANY(%(ids)s::UUID[]) AND jsonb_typeof(s.samples->'ts') = 'array'
         -- Only these known measurements, so an unexpected key never becomes a row.
         AND m.key IN ('fps', 'latency', 'jitter', 'bitrate', 'downloadSpeed', 'decodeDuration',

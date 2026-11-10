@@ -13,7 +13,7 @@ ROOT_URLCONF = "api.urls"
 INSTALLED_APPS = []
 # Standard safety headers, and adding a missing trailing slash to an address.
 MIDDLEWARE = ["django.middleware.security.SecurityMiddleware", "django.middleware.common.CommonMiddleware",
-              "django.middleware.clickjacking.XFrameOptionsMiddleware"]
+              "django.middleware.clickjacking.XFrameOptionsMiddleware", "api.middleware.api_guard"]
 # No other site may show the dashboard inside a frame.
 X_FRAME_OPTIONS = "DENY"
 # Every time is UTC, as on the database connection, so a day always means a UTC day.

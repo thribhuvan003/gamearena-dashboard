@@ -114,3 +114,7 @@ CREATE TABLE IF NOT EXISTS processor_lock (
     name STRING PRIMARY KEY,
     started_at TIMESTAMPTZ NOT NULL
 );
+
+-- A random value each run keeps while it holds the lock, so a run never refreshes or frees
+-- a lock that another run has taken over.
+ALTER TABLE processor_lock ADD COLUMN IF NOT EXISTS token STRING;

@@ -9,6 +9,7 @@
   --accent: #2d6845;
   --accent-dark: #235438;
   --accent-tint: #f4f8ef;
+  --selected: #e4efdc;
   --tint-line: #c7d6bb;
   --tint-text: #3d5e2d;
   --link: #245a38;
@@ -170,7 +171,7 @@ summary::-webkit-details-marker {
   display: none;
 }
 summary::before {
-  content: "›";
+  content: "›" / "";
   display: inline-block;
   width: 16px;
   color: var(--text-soft);
@@ -398,14 +399,17 @@ details[open] > summary::before {
   max-height: calc(100vh - 32px);
   overflow: auto;
   margin: 0;
-  padding: 16px;
+  padding: 16px 12px;
 }
 .filters-title {
-  margin-bottom: 12px;
-  font-size: 17px;
+  margin: 0 4px 12px;
+  font-size: 15px;
 }
 .filters input[type="search"] {
   width: 100%;
+  min-height: 36px;
+  padding: 4px 12px;
+  border-color: var(--line-strong);
   font-size: 15px;
 }
 /* Wide screens: the wrapper is invisible, so the panel still sticks beside the page.
@@ -416,64 +420,111 @@ details[open] > summary::before {
 .filters-toggle {
   display: none;
 }
+/* Section headings are quiet labels; the rows carry the weight. */
 .facet-section h3 {
-  margin-top: 16px;
+  margin: 16px 4px 4px;
   color: var(--text-soft);
   font-size: 13px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.facet-section h3,
-.facet-section > .link-button {
-  margin-left: 8px;
+  font-weight: 600;
 }
 .facet-list {
-  margin: 4px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-/* Each filter has a faint bar behind it, as wide as its count compared with the largest in its
-   group (--share, set on each button). */
+/* Every row is one 28px line at 13px, so long event names fit beside their count. A thin bar
+   along the bottom shows the count compared with the largest in the section (--share, set on
+   each button). The count sits in its own fixed column, so the numbers line up. */
 .facet-list button {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 34px;
-  margin: 2px 0;
-  padding: 4px 8px;
+  min-height: 28px;
+  padding: 2px 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
+  color: var(--text);
   background-color: transparent;
-  background-image: linear-gradient(
-    to right,
-    var(--bar) calc(var(--share, 0) * 100%),
-    transparent 0
-  );
-  font-size: 15px;
+  background-image: linear-gradient(var(--line-strong), var(--line-strong));
+  background-repeat: no-repeat;
+  background-position: 4px calc(100% - 1px);
+  background-size: calc((100% - 8px) * var(--share, 0)) 2px;
+  font-size: 13px;
+  line-height: 1.4;
   text-align: left;
 }
 .facet-list button:hover {
   background-color: var(--hover);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
-.facet-list button[aria-pressed="true"] {
+.facet-list button[aria-pressed="true"],
+.facet-list button[aria-pressed="true"]:hover {
   color: var(--accent-dark);
-  background-color: #dcebd2;
-  background-image: none;
+  background-color: var(--selected);
   font-weight: 600;
 }
 .facet-list .count {
   color: var(--text-muted);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
 }
 .facet-label {
   display: flex;
   gap: 4px;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* "Show N more" and "More filters": plain link-coloured buttons with a chevron that turns
+   when open. */
+.facet-more,
+.facet-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 4px;
+  border: 0;
+  color: var(--link);
+  background: transparent;
+  font-size: 13px;
+}
+.facet-more:hover,
+.facet-toggle:hover {
+  background: transparent;
+  text-decoration: underline;
+}
+.facet-more::after,
+.facet-toggle::after {
+  content: "›" / "";
+  display: inline-block;
+  font-size: 17px;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform var(--fast) var(--ease);
+}
+.facet-more[aria-expanded="true"]::after,
+.facet-toggle[aria-expanded="true"]::after {
+  transform: rotate(-90deg);
+}
+/* "More filters" sits under a faint line, apart from the three open sections. */
+.facet-toggle {
+  width: 100%;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  font-weight: 600;
+}
+/* How many picks are folded inside, so a hidden pick is never missed. */
+.facet-active {
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--accent-dark);
+  background: var(--accent-tint);
+  font-weight: 400;
 }
 /* The tick beside a chosen filter takes no room when the filter is not chosen. */
 .tick {
@@ -1193,6 +1244,9 @@ td summary {
 /* Touch screens: the compact controls grow to at least 44px, a comfortable size for a finger. */
 @media (pointer: coarse) {
   .facet-list button,
+  .facet-more,
+  .facet-toggle,
+  .filters input[type="search"],
   .chip-button,
   .copy-id {
     min-height: 44px;

@@ -418,6 +418,20 @@ class ImpactApiTests(unittest.TestCase):
             self.assertEqual(asked(batch, **bad)[0].status_code, 400)
         batch.assert_not_called()
 
+    def test_a_list_page_goes_no_further_than_10000_sessions(self, batch):
+        # Page 400 is the last one that can exist; a later page is a broken link and never reaches the database.
+        batch.return_value = stored()
+        response, queries = asked(batch, category="all", page="400")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(queries["list"][1]["offset"], 9975)
+        # The answer carries the limit, so the page's pager never offers a page past it.
+        self.assertEqual(response.json()["sessions"]["max_pages"], 400)
+        batch.reset_mock()
+        response = asked(batch, category="all", page="401")[0]
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Something in this page's address isn't valid. Use Reset view.")
+        batch.assert_not_called()
+
     def test_a_bad_search_gets_its_own_message(self, batch):
         # A search mistake gets its own message, since it was typed, not from a broken link.
         response = asked(batch, category="all", search="drop table")[0]

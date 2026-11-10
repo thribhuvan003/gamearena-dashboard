@@ -1,5 +1,6 @@
 """The only code that talks to the database. Loads every named query from api/sql and
 pipeline/sql, and runs them read-only; only the pipeline asks to write."""
+import atexit
 import os
 import threading
 from pathlib import Path
@@ -41,8 +42,9 @@ def connect(write=False):
     connection = psycopg.connect(database_url(), connect_timeout=5, row_factory=dict_row, autocommit=write)
     connection.read_only = not write
     connection.execute("SET TIME ZONE 'UTC'")
-    # A page request gives up after 3 minutes. The pipeline's queries have no limit.
-    connection.execute("SET statement_timeout = '0'" if write else "SET statement_timeout = '180s'")
+    # A page request gives up after 3 minutes. The pipeline's queries get a generous 30 minutes,
+    # but never none, so a stuck query can't hold the run lock forever.
+    connection.execute("SET statement_timeout = '1800s'" if write else "SET statement_timeout = '180s'")
     return connection
 
 
@@ -67,10 +69,12 @@ def pool():
     with _pool_lock:
         if _pool is None:
             # At most 5 connections per server process; a request waits up to 10 seconds for a
-            # free one. A connection is checked before use, so a restarted database is no problem.
-            _pool = ConnectionPool(database_url(), min_size=1, max_size=5, timeout=10,
+            # free one, and at most 20 wait at once, so a flood is turned away instead of queuing. A connection is checked before use, so a restarted database is no problem.
+            _pool = ConnectionPool(database_url(), min_size=1, max_size=5, timeout=10, max_waiting=20,
                                    kwargs={"row_factory": dict_row, "connect_timeout": 5},
                                    configure=_prepare, check=ConnectionPool.check_connection, open=True)
+            # Closed when the process ends, so its background threads stop cleanly.
+            atexit.register(_pool.close)
     return _pool
 
 

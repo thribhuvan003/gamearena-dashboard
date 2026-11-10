@@ -1,6 +1,6 @@
 // The main page: headline sentence, headline cards with trend lines, the two charts, the
 // detail sections, the error table, the filter panel, and the drawer with a card's sessions.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useReport } from "./api";
 import { AffectedSessions } from "./affected";
 import {
@@ -76,14 +76,23 @@ const NETWORK = [
   ],
 ];
 
-// Filter sections show their biggest few until "Show all" is clicked.
-const SHOWN = 5;
+// An open filter section shows its biggest six until "Show N more" is clicked. Fewer than six
+// is too few to scan, many more makes the panel long.
+const SHOWN = 6;
+// The sections most questions start from stay open; the rest fold under "More filters".
+const MAIN_SECTIONS = ["Connection", "Kind of error", "Where it failed"];
 
 // How each kind of number is written, one decimal each.
 const percent = (value) => number(value, 1) + "%";
 const seconds = (value) => number(value, 1) + " s";
 const hours = (value) => number(value, 1) + " h";
 const plain = (value) => number(value, 1);
+
+// The dates in words: one day, or the first and last.
+const datesText = (period) =>
+  period.start === period.end
+    ? dateLabel(period.end)
+    : `${dateLabel(period.start)} – ${dateLabel(period.end)}`;
 
 // What the selected dates are compared with, in words.
 function versusWords(days) {
@@ -424,8 +433,9 @@ function Filters({ facets, filters, reason, onChange }) {
     window.addEventListener("keydown", jump);
     return () => window.removeEventListener("keydown", jump);
   }, []);
-  // Which sections have "Show all" on, by section title.
-  const [expanded, setExpanded] = useState({});
+  // Whether "More filters" is open.
+  const [more, setMore] = useState(false);
+  const moreId = useId();
   // A tag is added or taken away; the "How far it got" choice stays as it is.
   const toggle = (key) =>
     onChange(
@@ -459,6 +469,36 @@ function Filters({ facets, filters, reason, onChange }) {
     },
   ];
   const wanted = find.trim().toLowerCase();
+  // Each section with only the rows that match the search; one with no match disappears.
+  const matching = sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        item.text.toLowerCase().includes(wanted),
+      ),
+    }))
+    .filter((section) => section.items.length);
+  const main = matching.filter((s) => MAIN_SECTIONS.includes(s.title));
+  const rest = matching.filter((s) => !MAIN_SECTIONS.includes(s.title));
+  // How many picks sit under "More filters", so a folded pick is never missed.
+  const active = rest.reduce(
+    (sum, s) => sum + s.items.filter((item) => item.on).length,
+    0,
+  );
+  // A pick inside "More filters" opens it, so the pick stays visible and unpicking it never
+  // pulls the focused button away. Searching looks through every section, folded or not.
+  useEffect(() => {
+    if (active > 0) setMore(true);
+  }, [active > 0]);
+  const restShown = more || wanted ? rest : [];
+  const draw = (section) => (
+    <FacetSection
+      key={section.title}
+      title={section.title}
+      items={section.items}
+      searching={Boolean(wanted)}
+    />
+  );
   return (
     <aside className="panel filters" aria-label="Filter sessions">
       <h2 className="filters-title">
@@ -477,85 +517,84 @@ function Filters({ facets, filters, reason, onChange }) {
         value={find}
         onChange={(event) => setFind(event.target.value)}
       />
-      {sections.map((section) => {
-        const items = section.items.filter((item) =>
-          item.text.toLowerCase().includes(wanted),
-        );
-        // A section with no match for the search disappears.
-        if (!items.length) return null;
-        // Searching shows every match, so no row hides behind "Show all".
-        const all = wanted || expanded[section.title];
-        // Engineering signals stay folded away until someone asks for them, unless one
-        // of them is already picked.
-        if (
-          section.title === "Technical signals" &&
-          !all &&
-          !items.some((item) => item.on)
-        )
-          return (
-            <section key={section.title} className="facet-section">
-              <button
-                type="button"
-                className="link-button"
-                onClick={() =>
-                  setExpanded({ ...expanded, [section.title]: true })
-                }
-              >
-                Show technical signals ({items.length})
-              </button>
-            </section>
-          );
-        // Folded, a section shows its biggest few plus any picked row, so a pick never hides.
-        const visible = all
-          ? items
-          : items.filter((item, i) => i < SHOWN || item.on);
-        // The largest count in the section, so each row's bar shows its share of it.
-        const largest = Math.max(1, ...items.map((item) => item.count));
-        return (
-          <section key={section.title} className="facet-section">
-            <h3>{section.title}</h3>
-            <ul className="facet-list">
-              {visible.map((item) => (
-                <li key={item.key}>
-                  <button
-                    type="button"
-                    aria-pressed={item.on}
-                    onClick={item.pick}
-                    style={{ "--share": item.count / largest }}
-                  >
-                    <span className="facet-label">
-                      <span className="tick" aria-hidden="true">
-                        {item.on ? "✓" : ""}
-                      </span>
-                      <span>{item.text}</span>
-                    </span>
-                    <span className="count">{number(item.count)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {/* No "Show all" while searching: every match is already shown. */}
-            {!wanted && items.length > SHOWN && (
-              <button
-                type="button"
-                className="link-button"
-                onClick={() =>
-                  setExpanded({ ...expanded, [section.title]: !all })
-                }
-              >
-                {all ? "Show fewer" : `Show all ${items.length}`}
-              </button>
-            )}
-          </section>
-        );
-      })}
+      {main.map(draw)}
+      {/* While searching every match is already shown, so there is nothing to unfold. */}
+      {rest.length > 0 && !wanted && (
+        <button
+          type="button"
+          className="facet-toggle"
+          aria-expanded={more}
+          aria-controls={moreId}
+          onClick={() => setMore(!more)}
+        >
+          More filters
+          {active > 0 && <span className="facet-active">{active} active</span>}
+        </button>
+      )}
+      <div id={moreId}>{restShown.map(draw)}</div>
     </aside>
+  );
+}
+
+// One filter section: its rows, largest first as the server sends them, each with its count
+// and a faint bar for its share of the section's largest.
+function FacetSection({ title, items, searching }) {
+  // Whether "Show N more" is on.
+  const [all, setAll] = useState(false);
+  const listId = useId();
+  // Folded, the section shows its biggest few plus any picked row, so a pick never hides
+  // and never moves. A button that would hide a single row takes that row's room, so then
+  // every row shows.
+  const top = items.filter((item, i) => i < SHOWN || item.on);
+  const hidden = items.length - top.length;
+  const fold = !searching && hidden > 1;
+  const visible = fold && !all ? top : items;
+  const largest = Math.max(1, ...items.map((item) => item.count));
+  return (
+    <section className="facet-section">
+      <h3>{title}</h3>
+      <ul id={listId} className="facet-list">
+        {visible.map((item) => (
+          <li key={item.key}>
+            <button
+              type="button"
+              aria-pressed={item.on}
+              onClick={item.pick}
+              style={{ "--share": item.count / largest }}
+            >
+              <span className="facet-label">
+                <span className="tick" aria-hidden="true">
+                  {item.on ? "✓" : ""}
+                </span>
+                <span>{item.text}</span>
+              </span>
+              <span className="count">{number(item.count)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {fold && (
+        <button
+          type="button"
+          className="facet-more"
+          aria-expanded={all}
+          aria-controls={listId}
+          onClick={() => setAll(!all)}
+        >
+          {all ? "Show fewer" : `Show ${hidden} more`}
+        </button>
+      )}
+    </section>
   );
 }
 
 // The "Showing only:" row above the cards: one chip per filter in use, each removing
 // itself when clicked, and "Clear all". Hidden when nothing is filtered.
-function ActiveFilters({ filters, reason, error, titles, sections, onChange }) {
+// The chips name the filters the numbers below were counted under (`shown`), which lag the
+// panel while new numbers load; removing one takes it from the current choices, so a pick
+// made meanwhile is kept.
+function ActiveFilters({ shown, current, titles, sections, onChange }) {
+  const { filters, reason, error } = shown;
   // Each tag's section title, so a chip can say where its filter came from.
   const sectionOf = Object.fromEntries(
     sections.flatMap((section) =>
@@ -570,21 +609,21 @@ function ActiveFilters({ filters, reason, error, titles, sections, onChange }) {
       shortTitle(titles[key] || key, sectionOf[key]),
     remove: () =>
       onChange(
-        filters.filter((f) => f !== key),
-        reason,
+        current.filters.filter((f) => f !== key),
+        current.reason,
       ),
   }));
   if (reason)
     chips.push({
       key: "reason",
       text: "How far it got: " + reason,
-      remove: () => onChange(filters, ""),
+      remove: () => onChange(current.filters, ""),
     });
   if (error)
     chips.push({
       key: "error",
       text: errorText(error),
-      remove: () => onChange(filters, reason, null),
+      remove: () => onChange(current.filters, current.reason, null),
     });
   if (!chips.length) return null;
   return (
@@ -836,7 +875,8 @@ export function DailyImpact({ period, revision, dataStart }) {
   );
   const [reason, setReason] = useState(fromUrl.reason || "");
   const [error, setError] = useState(errorFrom(fromUrl));
-  // The last numbers that arrived, kept on screen while new ones load.
+  // The last numbers that arrived, with the dates and filters they were counted for, kept on
+  // screen while new ones load or after a request fails.
   const [shown, setShown] = useState(null);
   // Goes up on "Try again", which asks for the same numbers once more.
   const [retry, setRetry] = useState(0);
@@ -893,19 +933,27 @@ export function DailyImpact({ period, revision, dataStart }) {
       // Sorting only matters, and is only sent, while a list is open.
       ...(category && sort.key ? { sort: sort.key, order: sort.order } : {}),
     },
-    revision + retry,
+    [revision, retry],
   );
 
+  // What the open list is for: the card, dates and filters. A page, search or sort of the
+  // same list is not part of it, so the rows stay (dimmed) while the next page loads and the
+  // drawer never flickers shut; anything else shows "Loading" rather than another list's rows.
+  const listScope = JSON.stringify([period, category, filters, reason, error]);
   // While new numbers load, the old ones stay on screen, dimmed, instead of the page emptying.
-  // The open list keeps its rows while the next page loads, so the drawer never flickers shut.
   const [list, setList] = useState(null);
   useEffect(() => {
     if (!result.data) return;
-    setShown(result.data);
+    setShown({ data: result.data, period, filters, reason, error });
     if (result.data.sessions)
-      setList({ category, sessions: result.data.sessions });
+      setList({ scope: listScope, sessions: result.data.sessions });
   }, [result.data]);
-  const data = result.data || shown;
+  // The numbers on screen and the choices they were counted for. The headline's dates and the
+  // chips are built from these, never from choices whose numbers haven't arrived.
+  const view = result.data
+    ? { data: result.data, period, filters, reason, error }
+    : shown;
+  const data = view?.data;
 
   // Opens a group's sessions in the drawer. `source` is the card title clicked, if any.
   function open(next, source = null) {
@@ -941,15 +989,6 @@ export function DailyImpact({ period, revision, dataStart }) {
     filter(filters, reason === text ? "" : text);
   }
 
-  // How many days are shown, counting both ends; the comparison is the same length.
-  const days = (new Date(period.end) - new Date(period.start)) / 86400000 + 1;
-  const versus = versusWords(days);
-  // The dates in words, for the headline and the drawer.
-  const when =
-    period.start === period.end
-      ? dateLabel(period.end)
-      : `${dateLabel(period.start)} – ${dateLabel(period.end)}`;
-
   // Until the first numbers arrive: grey placeholders, so the page never jumps, or the
   // error with a way out.
   if (!data)
@@ -983,12 +1022,20 @@ export function DailyImpact({ period, revision, dataStart }) {
       </section>
     );
 
+  // How many days the numbers on screen cover, counting both ends; the comparison is the
+  // same length.
+  const days =
+    (new Date(view.period.end) - new Date(view.period.start)) / 86400000 + 1;
+  const versus = versusWords(days);
+  // The dates in words: the headline's are those of the numbers on screen.
+  const when = datesText(view.period);
+
   const summary = data.summary;
   // The server compares with the same weekdays a week earlier (under 7 days) or the same
   // number of days just before. If that period starts before the data does, it is only
   // partly filled, so no comparison is shown rather than a false "Up".
   const shift = days < 7 ? 7 : days;
-  const beforeStart = new Date(Date.parse(period.start) - shift * 86400000)
+  const beforeStart = new Date(Date.parse(view.period.start) - shift * 86400000)
     .toISOString()
     .slice(0, 10);
   const before = dataStart && beforeStart < dataStart ? null : data.previous;
@@ -1100,9 +1147,8 @@ export function DailyImpact({ period, revision, dataStart }) {
           aria-busy={Boolean(result.loading)}
         >
           <ActiveFilters
-            filters={filters}
-            reason={reason}
-            error={error}
+            shown={view}
+            current={{ filters, reason }}
             titles={data.titles}
             sections={data.facets.sections}
             onChange={filter}
@@ -1113,7 +1159,7 @@ export function DailyImpact({ period, revision, dataStart }) {
             when={when}
             versus={versus}
             onClear={
-              filters.length || reason || error
+              view.filters.length || view.reason || view.error
                 ? () => filter([], "", null)
                 : null
             }
@@ -1342,8 +1388,9 @@ export function DailyImpact({ period, revision, dataStart }) {
           onClose={() => setCategory(null)}
         >
           <Notice error={result.error} />
-          {/* Until this card's own rows arrive, say so rather than show another card's. */}
-          {list?.category !== category ? (
+          {/* Until this list's own rows arrive, say so rather than show another card's, or
+              this card's for other dates or filters. */}
+          {list?.scope !== listScope ? (
             <Notice loading>Loading sessions…</Notice>
           ) : (
             <AffectedSessions
@@ -1363,7 +1410,7 @@ export function DailyImpact({ period, revision, dataStart }) {
               }}
               // What the list is limited to, in words: the dates and every filter.
               scope={[
-                when,
+                datesText(period),
                 ...filters.map((key) => data.titles[key] || key),
                 reason,
                 error && errorText(error),

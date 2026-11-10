@@ -10,6 +10,7 @@ and session_day_error_events. It keeps its own progress in processor_state, proc
 processor_lock. The raw telemetry tables are only read.
 """
 import argparse
+import secrets
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -45,6 +46,12 @@ def rules_version():
     # Line endings are ignored, so a Windows and a Linux checkout agree.
     text = b"".join((ROOT / name).read_bytes().replace(b"\r\n", b"\n") for name in RULE_FILES)
     return sha256(text).hexdigest()[:16]
+
+
+# Worked out once, when this process starts. A long-running --every process keeps the rules and SQL
+# it started with, so it must also keep their version: if the files change on disk meanwhile, it
+# would otherwise retag everything with the old code under the new version's name.
+VERSION = rules_version()
 
 
 def create_tables(connection):
@@ -126,15 +133,27 @@ def fill_queue(connection, full, version):
     connection.execute(db.QUERIES["process_save_state"], {"name": "pending", **marks, "rules_version": version})
 
 
+def unlock(connection, token):
+    # Frees this run's lock, so the next run need not wait an hour for it to expire. When the run
+    # failed because its connection broke, the lock is freed on a fresh one.
+    try:
+        connection.execute(db.QUERIES["process_unlock"], {"token": token})
+    except psycopg.Error:
+        with db.connect(write=True) as fresh:
+            fresh.execute(db.QUERIES["process_unlock"], {"token": token})
+
+
 def run(full, batch):
-    version = rules_version()
+    version = VERSION
     started = time.monotonic()
     tagged = 0
+    # This run's own mark on the lock, so it only ever refreshes or frees a lock it holds.
+    token = secrets.token_hex(16)
     with db.connect(write=True) as connection:
         # Creates the pipeline's own tables on first use; safe to repeat.
         create_tables(connection)
         # Another live run holds the lock: stop rather than tag the same sessions twice.
-        if not read(connection, "process_lock"):
+        if not read(connection, "process_lock", {"token": token}):
             print("Another run is still tagging sessions. Try again when it has finished.", file=sys.stderr)
             return False
         try:
@@ -152,15 +171,18 @@ def run(full, batch):
             # Take the next batch from the queue until it is empty.
             while ids := [str(row["session_id"]) for row in read(connection, "process_next", {"batch": batch})]:
                 tagged += with_retries(lambda: process_batch(connection, ids, version))
-                # A long run keeps its lock fresh, so it is never mistaken for one that died.
-                connection.execute(db.QUERIES["process_lock_refresh"])
+                # A long run keeps its lock fresh, so it is never mistaken for one that died. If
+                # another run took the lock over meanwhile, this one stops and leaves the queue to it.
+                if not read(connection, "process_lock_refresh", {"token": token}):
+                    print("Another run took over the lock. Stopping.", file=sys.stderr)
+                    return False
                 print(f"Tagged {tagged} sessions")
             # The queue is empty, so the point this run read up to becomes the saved point.
             pending = read(connection, "process_state", {"name": "pending"})[0]
             connection.execute(db.QUERIES["process_save_state"], {**pending, "name": "sessions"})
         finally:
             # Released even when the run fails, so the next run need not wait an hour for it to expire.
-            connection.execute(db.QUERIES["process_unlock"])
+            unlock(connection, token)
     print(f"Done in {time.monotonic() - started:.0f} s. {tagged} sessions updated.")
     return True
 
