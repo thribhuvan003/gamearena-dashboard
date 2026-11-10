@@ -14,7 +14,7 @@ def selection(request):
     params = date_window(request.GET.get("start", ""), request.GET.get("end", ""))
     params["search"] = request.GET.get("search", "").strip().lower()
     if len(params["search"]) > 36 or any(c not in "0123456789abcdef-" for c in params["search"]):
-        raise ValueError("Search must be a session ID or part of one.")
+        raise ValueError("Search: a session ID only has the digits 0-9, the letters a-f and dashes.")
     return params
 
 
@@ -72,6 +72,6 @@ def sessions(request, session_id, section=None):
     except (ValueError, OverflowError):
         return JsonResponse({"error": "Invalid dates, search or filter."}, status=400)
     except psycopg.errors.QueryCanceled:
-        return JsonResponse({"error": "Query timed out. Choose a shorter date range."}, status=504)
+        return JsonResponse({"error": "This took too long. Try fewer days."}, status=504)
     except psycopg.Error:
-        return JsonResponse({"error": "Database unavailable."}, status=503)
+        return JsonResponse({"error": "Can't reach the data right now. Try again in a minute."}, status=503)

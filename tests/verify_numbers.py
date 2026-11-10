@@ -90,6 +90,29 @@ ENDS = f"""SELECT COUNT(DISTINCT session_id) FROM session_telemetry_events
 END_TAGS = {"ended_device_deleted": "Device deleted", "ended_not_in_use": "Not in use", "ended_by_user": "Ended by user"}
 
 
+MEASURES = """
+SELECT m.key AS measure, SUM((m.value->>i)::FLOAT8) / COUNT(*) AS average
+FROM session_telemetry_stats s
+CROSS JOIN LATERAL jsonb_each(s.samples) AS m(key, value)
+CROSS JOIN LATERAL generate_series(0, jsonb_array_length(s.samples->'ts') - 1) AS i
+WHERE jsonb_typeof(s.samples->'ts') = 'array' AND jsonb_typeof(m.value) = 'array'
+    AND m.key IN ('latency', 'jitter', 'bitrate', 'downloadSpeed', 'decodeDuration', 'encodeDuration')
+    AND jsonb_typeof(m.value->i) = 'number' AND jsonb_typeof(s.samples->'ts'->i) = 'number'
+    AND (m.value->>i)::FLOAT8 >= 0 AND (m.value->>i)::FLOAT8 < 'Infinity'::FLOAT8
+    AND (s.samples->'ts'->>i)::INT8 >= EXTRACT(EPOCH FROM %(start)s::TIMESTAMPTZ) * 1000
+    AND (s.samples->'ts'->>i)::INT8 < EXTRACT(EPOCH FROM (%(end)s::DATE + 1)::TIMESTAMPTZ) * 1000
+    AND s.session_id IN (SELECT session_id FROM session_telemetry_events)
+GROUP BY m.key"""
+
+
+REASONS = f"""SELECT COALESCE(payload->>'code', payload->>'errorCode') AS code, payload->>'event' AS event,
+        COALESCE(payload->>'reason', payload->>'errorText', '') AS reason, NOT ({NOT_STALE}) AS after_end,
+        COUNT(DISTINCT session_id) AS sessions
+    FROM session_telemetry_events e
+    WHERE (payload ? 'code' OR payload ? 'errorCode') AND payload->>'event' IS NOT NULL AND {DAYS}
+    GROUP BY 1, 2, 3, 4"""
+
+
 def nearest_rank(values, share):
     values = sorted(values)
     return values[max(math.ceil(share * len(values)) - 1, 0)] if values else None
@@ -97,6 +120,8 @@ def nearest_rank(values, share):
 
 def main():
     with repository.connect() as connection:
+        # Recounting from raw readings is slow; give it longer than a page request gets.
+        connection.execute("SET statement_timeout = '900s'")
         dates = connection.execute(repository.QUERIES["range"]).fetchone()
         start, end = (sys.argv[1], sys.argv[2]) if len(sys.argv) == 3 else (str(dates["start"]), str(dates["end"]))
         params = {"start": f"{start} 00:00:00+00", "end": end}
@@ -110,6 +135,9 @@ def main():
         errors = {key: one(ERRORS, field="event", value=name) for name, (key, _, _) in ERROR_TYPES.items()}
         errors |= {"stage_" + stage.lower(): one(ERRORS, field="stage", value=stage) for stage in STAGES}
         errors |= {key: one(ENDS, value=reason) for key, reason in END_TAGS.items()}
+        reasons = {(row["code"], row["event"], row["reason"], row["after_end"]): row["sessions"]
+                   for row in connection.execute(REASONS, params)}
+        measures = {row["measure"]: round(row["average"], 2) for row in connection.execute(MEASURES, params)}
 
     client = Client()
     data = client.get("/api/impact/", {"start": start, "end": end}).json()
@@ -128,7 +156,15 @@ def main():
         ("High skipped frames", stream["high_skip"], groups["high_skip"]["count"]),
         ("Typical wait (s)", nearest_rank(waits, 0.5), summary["ready_p50"]),
         ("1 in 10 waited over (s)", nearest_rank(waits, 0.9), summary["ready_p90"]),
-    ] + [(groups[key]["title"], count, groups[key]["count"]) for key, count in errors.items()]
+    ] + [(groups[key]["title"], count, groups[key]["count"]) for key, count in errors.items()] + [
+        (f"Average {name}", average, round(summary["measures"][name]["average"], 2))
+        for name, average in measures.items()]
+
+    # Error codes and reasons: compared as a whole, and only the counts are printed, never the text.
+    shown = {(row["code"], row["event"], row["reason"], row["after_end"]): row["sessions"]
+             for row in data["error_reasons"]}
+    rows.append(("Error code + reason pairs that match", len(reasons), sum(
+        shown.get(key) == count for key, count in reasons.items()) if shown.keys() == reasons.keys() else -1))
 
     print(f"{start} to {end}")
     failed = 0

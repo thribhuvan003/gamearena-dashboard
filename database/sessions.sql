@@ -31,8 +31,9 @@ SELECT session_id,
     -- Both are short fixed values.
     (array_agg(payload->>'end_reason' ORDER BY recorded_at)
         FILTER (WHERE event_type = 'session_ended'))[1] AS end_reason,
-    -- The latest connection error exactly as the app sent it, so nothing is lost in translation.
-    (array_agg(COALESCE(message, payload->>'reason') ORDER BY recorded_at DESC)
+    -- The app's own reason for its latest connection error, as sent. The message field only
+    -- repeats the event's name, so the reason comes first.
+    (array_agg(COALESCE(payload->>'reason', payload->>'errorText', message) ORDER BY recorded_at DESC)
         FILTER (WHERE name = 'pipeline.connect.failure'))[1] AS last_error_message,
     (SELECT string_agg(mode, ', ' ORDER BY mode) FROM (SELECT DISTINCT payload->>'mode' AS mode FROM events
         WHERE payload->>'mode' IS NOT NULL) modes) AS access_modes,
@@ -119,6 +120,7 @@ WITH readings AS (
 )
 SELECT metric,
     COUNT(*) FILTER (WHERE valid) AS valid,
+    COUNT(*) FILTER (WHERE valid AND amount < 30) AS under_30,
     COUNT(*) FILTER (WHERE NOT valid) AS missing,
     AVG(amount) FILTER (WHERE valid) AS mean,
     MIN(amount) FILTER (WHERE valid) AS minimum,

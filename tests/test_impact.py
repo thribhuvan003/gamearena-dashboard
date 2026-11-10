@@ -10,7 +10,7 @@ django.setup()
 
 from django.test import Client  # noqa: E402  (needs django.setup first)
 
-from logic.rules import DEFINITIONS, SECTIONS, combine_sessions, groups, matches, summary, tags  # noqa: E402
+from logic.rules import DEFINITIONS, NOT_FILTERS, SECTIONS, combine_sessions, groups, matches, summary, tags  # noqa: E402
 
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
 TOTALS = {"sessions": 0, "stats_only": 0, "streamed_seconds": 0, "low_fps_seconds": 0,
@@ -27,7 +27,10 @@ def stored(tagged=None, listed=None, **totals):
     reasons = [{"reason": row["why"], "sessions": 1} for row in listed or []]
     return {"tags": tagged or [], "totals": totals, "reasons": reasons,
             "before_tags": tagged or [], "before_totals": totals,
-            "list": listed or [], "list_reasons": reasons}
+            "list": listed or [], "list_reasons": reasons,
+            "measures": [{"measure": "latency", "average": 25.0, "readings": 60, "sessions": 3, "typical": 20.0,
+                          "high_tenth": 40.0, "low_tenth": 10.0}], "before_measures": [],
+            "trend": [], "error_reasons": []}
 
 
 class RuleTests(unittest.TestCase):
@@ -129,8 +132,11 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(set(groups(session(events=0))), set(DEFINITIONS))
 
     def test_every_tag_sits_in_exactly_one_filter_section(self):
+        # Every group is either a filter in exactly one section, or deliberately left out of the filters.
         placed = [tag for tags_in_section in SECTIONS.values() for tag in tags_in_section]
-        self.assertEqual(sorted(placed), sorted(set(DEFINITIONS) - {"all"}))
+        self.assertEqual(len(placed), len(set(placed)))
+        self.assertEqual(set(placed) | NOT_FILTERS, set(DEFINITIONS))
+        self.assertFalse(set(placed) & NOT_FILTERS)
 
     def test_errors_become_type_and_stage_tags_across_days(self):
         rows = combine_sessions([
@@ -167,8 +173,16 @@ class SummaryTests(unittest.TestCase):
     def test_connection_rates_divide_by_sessions_that_tried(self):
         result = summary({"tried": 2, "no_success": 1}, {**TOTALS, "sessions": 4})
         self.assertEqual(result["groups"]["no_success"]["share"], 50)
-        self.assertEqual(result["groups"]["low_fps"]["share"], 0)
+        # No session sent readings, so there is no frame-rate share to show, not 0%.
+        self.assertIsNone(result["groups"]["low_fps"]["share"])
         self.assertEqual(result["attempted"], 2)
+
+    def test_each_share_is_out_of_the_sessions_it_can_apply_to(self):
+        result = summary({"tried": 90, "connected": 80, "measured": 40, "low_fps": 10, "stream_drops": 8},
+                         {**TOTALS, "sessions": 100})
+        self.assertEqual(result["groups"]["low_fps"]["share"], 25)       # 10 of 40 that sent readings
+        self.assertEqual(result["groups"]["stream_drops"]["share"], 10)  # 8 of 80 that connected
+        self.assertEqual(result["groups"]["low_fps"]["base"], 40)
 
     def test_missing_stats_never_become_zero_fps(self):
         result = summary({}, {**TOTALS, "sessions": 1})
@@ -184,8 +198,29 @@ class ImpactApiTests(unittest.TestCase):
             data = Client().get("/api/impact/", params).json()["sessions"]
         self.assertEqual(data["order"], "Lowest average FPS first")
         name, query = batch.call_args.args[0]["list"]
-        self.assertEqual((name, query["category"], query["limit"], query["offset"]),
-                         ("impact_list", "low_fps", 25, 0))
+        self.assertEqual((name, query["category"], query["limit"], query["offset"], query["sort"]),
+                         ("impact_list", "low_fps", 25, 0, ""))
+
+    def test_changes_compare_like_with_like(self):
+        # One day is compared with the same weekday a week earlier; a week or more with the days just before.
+        for start, end, then in (("2026-10-08", "2026-10-08", ("2026-10-01", "2026-10-02")),
+                                 ("2026-10-08", "2026-10-10", ("2026-10-01", "2026-10-04")),
+                                 ("2026-10-08", "2026-10-21", ("2026-09-24", "2026-10-08"))):
+            with patch("database.repository.batch", return_value=stored()) as batch:
+                self.assertEqual(Client().get("/api/impact/", {"start": start, "end": end}).status_code, 200)
+            _, query = batch.call_args.args[0]["before_totals"]
+            self.assertEqual((str(query["start"])[:10], str(query["end"])[:10]), then)
+
+    def test_a_list_sorts_by_a_known_column_only(self):
+        with patch("database.repository.batch", return_value=stored()) as batch:
+            params = {"start": "2026-10-01", "end": "2026-10-01", "category": "all", "sort": "wait", "order": "asc"}
+            self.assertEqual(Client().get("/api/impact/", params).status_code, 200)
+        _, query = batch.call_args.args[0]["list"]
+        self.assertEqual((query["sort"], query["descending"]), ("wait", False))
+        with patch("database.repository.batch") as batch:
+            params = {"start": "2026-10-01", "end": "2026-10-01", "category": "all", "sort": "a.session_id; --"}
+            self.assertEqual(Client().get("/api/impact/", params).status_code, 400)
+            batch.assert_not_called()
 
     def test_card_count_matches_its_session_list(self):
         listed = [{"session_id": "a", "fps_mean": 20, "why": "Connected"}]
@@ -197,10 +232,16 @@ class ImpactApiTests(unittest.TestCase):
         self.assertEqual(data["summary"]["groups"]["low_fps"]["count"], 1)
         self.assertEqual(data["sessions"]["total"], 1)
         self.assertEqual(data["sessions"]["items"][0]["session_id"], "a")
+        # "Sessions with a frame rate" is a card but not a filter, so only the low-FPS filter is listed.
         self.assertEqual(data["facets"]["sections"], [{"title": "Stream quality", "tags": [
-            {"key": "fps", "title": "Sessions with a frame rate", "count": 2},
-            {"key": "low_fps", "title": "Sessions averaging below 30 FPS", "count": 1}]}])
+            {"key": "low_fps", "title": "Averaged below 30 FPS", "count": 1}]}])
         self.assertEqual(data["previous"]["sessions"], 2)  # the mock returns the same totals for the day before
+        self.assertEqual(data["summary"]["measures"], {"latency": {
+            "average": 25.0, "readings": 60, "sessions": 3, "typical": 20.0, "high_tenth": 40.0, "low_tenth": 10.0}})
+        # A one-day view still gets 28 days of trend, with empty days filled in.
+        self.assertEqual(len(data["trend"]), 28)
+        self.assertEqual(data["trend"][-1]["day"], "2026-10-01")
+        self.assertEqual(data["trend"][0]["sessions"], 0)
         self.assertEqual(response["Cache-Control"], "no-store")
 
     def test_filters_reach_every_query_and_bad_ones_never_do(self):
@@ -209,7 +250,8 @@ class ImpactApiTests(unittest.TestCase):
                       "reason": "Connected"}
             self.assertEqual(Client().get("/api/impact/", params).status_code, 200)
         for name, query in batch.call_args.args[0].values():
-            self.assertEqual((query["filters"], query["reason"]), (["no_success", "owner"], "Connected"))
+            self.assertEqual((query["filters"], query["reason"], query["error_code"]),
+                             (["no_success", "owner"], "Connected", ""))
         with patch("database.repository.batch") as batch:
             for bad in ({"filters": "all"}, {"filters": "x;DROP"}, {"reason": "x" * 201}):
                 params = {"start": "2026-10-01", "end": "2026-10-01", **bad}

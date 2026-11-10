@@ -9,15 +9,20 @@ HIGH_SKIP_SHARE = 0.10
 
 # Connection rates divide by sessions that tried to connect, not by every session:
 # a session with no attempt can neither fail nor succeed.
-OF_ATTEMPTED = {"failure", "later_success", "no_later_success", "no_success", "repeated_attempts", "ready",
-                "stream_drops"}
+OF_ATTEMPTED = {"failure", "later_success", "no_later_success", "no_success", "repeated_attempts", "ready"}
+# Losing video can only happen once connected; the share of sessions that never sent readings
+# is out of the sessions that connected.
+OF_CONNECTED = {"stream_drops", "connected_no_stats"}
+# Frame-rate and skipped-frame groups can only include sessions that sent readings, so their
+# share is out of those sessions, not out of every session.
+OF_MEASURED = {"low_fps", "any_low_fps", "high_skip"}
 
 # Title and one-line definition of every group a card or list can show.
 DEFINITIONS = {
     "all": ("Sessions", "Every session with activity on the selected dates (UTC)."),
     "tried": ("Tried to connect", "Asked to connect at least once."),
     "connected": ("Connected", "Got video at least once."),
-    "failure": ("Connection failures", "The app reported a connection error before the session ended."),
+    "failure": ("Had a connection error", "The app reported a connection error before the session ended."),
     "later_success": ("Error, then connected", "Had a connection error, then connected after it."),
     "no_later_success": ("Error, never connected", "Had a connection error and never connected after it."),
     "no_success": (
@@ -29,45 +34,49 @@ DEFINITIONS = {
         "The app kept retrying a session that had already closed. Not counted as failures.",
     ),
     "low_fps": (
-        "Sessions averaging below 30 FPS",
+        "Averaged below 30 FPS",
         "Under 30 frames per second on average. 30 is normal for an idle desktop, so only below 30 counts.",
     ),
-    "any_low_fps": ("Sessions that dropped below 30 FPS", "Went under 30 frames per second at least once."),
+    "any_low_fps": ("Dipped below 30 FPS", "Went under 30 frames per second at least once."),
     "fps": ("Sessions with a frame rate", "Every session that reported its frame rate."),
-    "ready": ("Wait until video starts", "How long it took from connecting to seeing the first video frame."),
+    "ready": ("Time to video", "How long it took from connecting to seeing the first video frame."),
     "stream_drops": (
-        "Stream dropped while playing",
+        "Lost video while playing",
         "Connected, then lost the video connection at least once.",
     ),
     "high_skip": (
-        "High skipped frames",
+        "Many skipped frames",
         "Proposed rule: 10+ skipped frames in a second, for 10% or more of the session's streamed time.",
     ),
     "repeated_attempts": (
-        "Multiple connection attempts",
+        "More than one attempt",
         "Needed more than one try to connect. A second player joining also counts.",
     ),
-    "measured": ("Sent performance stats", "Sent frame rate and network readings."),
+    "measured": ("Sent stream readings", "The player app sent its per-second readings: frame rate, delay, download speed."),
     "missing_stats": (
         "No performance stats",
         "Never sent performance stats, so its streamed time is unknown.",
     ),
     "connected_no_stats": (
-        "Connected, but sent no stats",
-        "Connected, but the player app never sent performance stats, so its time isn't in Streamed hours.",
+        "Connected, but sent no readings",
+        "Got video, but the player app never sent its per-second readings, so its time isn't in Streamed hours.",
     ),
     "stats_only": (
         "Stats but no activity",
         "Sent performance stats but no activity events. Not counted as sessions.",
     ),
     "reconnected": ("Player rejoined", "The player dropped and rejoined at least once."),
-    "channel_errors": ("Connection channel errors", "The connection channel reported an error at least once."),
+    "channel_errors": ("Server connection errors", "The app's connection to our server reported an error at least once."),
+    "channel_dropped": ("Server connection dropped", "The app's connection to our server was lost at least once."),
+    "channel_recovered": ("Server connection came back", "The app's connection to our server was lost and came back."),
+    "route_restarted": ("Network path restarted", "The network path between player and host was restarted."),
+    "session_recreated": ("Session recreated", "The session was replaced by a new one with a new ID."),
     "no_end": ("No end recorded", "Never logged a session end, so it may still be running or the end was lost."),
     "owner": ("Owner joined", "The owner of the host joined the session."),
     "share_link": ("Joined by share link", "Someone joined through a share link."),
     "external_user": ("External user joined", "An external user joined the session."),
     "ended_device_deleted": (
-        "Ended: device deleted",
+        "Ended: gaming server removed",
         "The cloud gaming server was removed, by the provider or during a test. Not an error in the session.",
     ),
     "ended_not_in_use": ("Ended: not in use", "The session was closed because it was not being used."),
@@ -82,41 +91,53 @@ ERROR_TYPES = {
     "webrtc.connection.state": (
         "error_video_connection", "Error: video connection failed", "The video connection reported a failure."),
     "ice.connection.state": (
-        "error_network_route", "Error: network route failed", "The network path between player and host failed."),
+        "error_network_route", "Error: couldn't connect to the host at all",
+        "Every way the app tried to reach the host failed."),
     "ice.candidate.error": (
-        "error_route_attempt", "Error: one network path failed",
-        "One way of reaching the host failed. Common, and harmless when another way works."),
+        "error_route_attempt", "Error: one way to connect failed (usually harmless)",
+        "The app tries several ways to reach the host at once. One of them failed; another usually works."),
     "ws.reconnect.exhausted": (
-        "error_channel_gave_up", "Error: connection channel gave up", "The connection channel stopped retrying."),
+        "error_channel_gave_up", "Error: stopped trying to reach the server",
+        "The app gave up reconnecting to our server."),
     "media.decode.error": (
         "error_decode", "Error: video could not be decoded", "The player app could not decode the video."),
 }
-# The part of the app an error came from, exactly as the app names it.
-# The team still needs to confirm what "Scream" is; it is shown as sent.
-STAGES = ("Session", "JoinSession", "Config", "Device", "Websocket", "WebRTC", "Video", "Scream", "Input", "Cursor")
+# The part of the app an error came from, in plain words, with the app's own name kept for engineers.
+# The team still needs to confirm what "Scream" is, so it is shown as sent.
+STAGE_NAMES = {"Session": "session setup", "JoinSession": "joining the session", "Config": "settings",
+               "Device": "device", "Websocket": "server connection", "WebRTC": "video connection setup",
+               "Video": "video stream", "Scream": "Scream (to be confirmed)", "Input": "keyboard and mouse",
+               "Cursor": "cursor"}
+STAGES = tuple(STAGE_NAMES)
 for key, title, definition in ERROR_TYPES.values():
     DEFINITIONS[key] = (title, definition)
-for stage in STAGES:
-    DEFINITIONS["stage_" + stage.lower()] = (f"Error at {stage} stage", f"An error came from the {stage} part of the app.")
+for stage, name in STAGE_NAMES.items():
+    DEFINITIONS["stage_" + stage.lower()] = (
+        f"Error in {name}", f"An error came from the {name} part of the app. The app itself calls it {stage}.")
 
 # How the filter panel groups the tags. Every tag is in exactly one section.
+# Only groups a founder would filter by. Groups that repeat another one (Time to video = Connected),
+# cover almost every session (Tried to connect), or can be made by picking two filters stay as cards
+# and lists but not as filters. Signals only engineers act on sit in their own section, closed by default.
 SECTIONS = {
-    "Connection": ("tried", "connected", "no_success", "failure", "later_success", "no_later_success",
-                   "failure_after_end", "repeated_attempts", "ready", "reconnected", "channel_errors"),
-    "Stream quality": ("measured", "missing_stats", "connected_no_stats", "stats_only", "fps", "low_fps",
-                       "any_low_fps", "stream_drops", "high_skip"),
-    "Error type": tuple(key for key, _, _ in ERROR_TYPES.values()),
-    "Error stage": tuple("stage_" + stage.lower() for stage in STAGES),
+    "Connection": ("connected", "no_success", "failure", "repeated_attempts", "reconnected"),
+    "Stream quality": ("measured", "connected_no_stats", "any_low_fps", "low_fps", "stream_drops", "stats_only"),
+    "Kind of error": tuple(key for key, _, _ in ERROR_TYPES.values()),
+    "Where it failed": tuple("stage_" + stage.lower() for stage in STAGES if stage != "Scream"),
     "How it ended": ("ended_device_deleted", "ended_not_in_use", "ended_by_user", "no_end"),
     "Who joined": ("owner", "share_link", "external_user"),
+    "Technical signals": ("channel_errors", "channel_dropped", "channel_recovered", "route_restarted",
+                          "session_recreated", "failure_after_end", "high_skip", "stage_scream"),
 }
+NOT_FILTERS = {"all", "tried", "ready", "fps", "missing_stats", "later_success", "no_later_success"}
 
 # Daily facts that are added together across days.
 COUNTS = ("events", "attempts", "failures", "failures_after_end", "batches",
           "streamed_seconds", "low_fps_seconds", "fps_sum", "fps_valid",
           "host_connects", "client_connects", "webrtc_failures", "stream_drops", "high_skip_seconds",
           "reconnects", "channel_errors", "ends", "owner_joins", "share_joins", "external_joins",
-          "device_deleted_ends", "not_in_use_ends", "user_ends")
+          "device_deleted_ends", "not_in_use_ends", "user_ends",
+          "channel_drops", "channel_recoveries", "route_restarts", "recreations")
 
 
 def combine_sessions(days):
@@ -151,8 +172,6 @@ def combine_sessions(days):
 
 
 PHASES = {"pre-connect": "before connecting", "connecting": "while connecting", "ended": "after it ended"}
-STEPS = {"Session": "session setup", "Config": "settings",
-         "Websocket": "connection channel", "Device": "device"}
 CODES = {"500": "server error", "400": "request rejected"}
 
 
@@ -160,22 +179,24 @@ def error_words(detail):
     # "500 / Session / pre-connect" becomes
     # "server error before connecting, at session setup (code 500)".
     # The code stays at the end so engineers can still trace it.
-    if not detail:
+    if not detail or not detail.replace("/", "").strip():
         return "an error with no code"
     code, step, phase = (detail.split(" / ") + ["", "", ""])[:3]
     words = CODES.get(code, "error")
     if phase:
         words += " " + PHASES.get(phase, phase)
     if step:
-        words += ", at " + STEPS.get(step, step)
+        words += ", at " + STAGE_NAMES.get(step, step)
     return f"{words} (code {code})" if code else words
 
 
 def why(row):
     # The furthest connection step a session reached, read from the events it logged.
+    if not row.get("events"):
+        return "Sent stats but no activity events"
     success, failure = row.get("last_success"), row.get("last_failure")
     if success and failure and failure > success:
-        return "Connected, then " + error_words(row.get("failure_detail"))
+        return "Connected, but a later try failed: " + error_words(row.get("failure_detail"))
     if success:
         return "Connected after an error" if failure else "Connected"
     if not row["attempts"]:
@@ -227,6 +248,10 @@ def groups(row):
         "stats_only": False,
         "reconnected": row["reconnects"] > 0,
         "channel_errors": row["channel_errors"] > 0,
+        "channel_dropped": row["channel_drops"] > 0,
+        "channel_recovered": row["channel_recoveries"] > 0,
+        "route_restarted": row["route_restarts"] > 0,
+        "session_recreated": row["recreations"] > 0,
         "no_end": row["ends"] == 0,
         "owner": row["owner_joins"] > 0,
         "share_link": row["share_joins"] > 0,
@@ -255,9 +280,10 @@ def summary(counts, totals):
     groups = {}
     for category, (title, definition) in DEFINITIONS.items():
         count = {"all": sessions, "stats_only": totals["stats_only"]}.get(category, counts.get(category, 0))
-        base = attempted if category in OF_ATTEMPTED else sessions
+        base = (attempted if category in OF_ATTEMPTED else counts.get("connected", 0) if category in OF_CONNECTED
+                else counts.get("measured", 0) if category in OF_MEASURED else sessions)
         share = None if category == "stats_only" else percent(count, base)
-        groups[category] = {"title": title, "definition": definition, "count": count, "share": share}
+        groups[category] = {"title": title, "definition": definition, "count": count, "share": share, "base": base}
     streamed = totals["streamed_seconds"] / 3600
     low = totals["low_fps_seconds"] / 3600
     # Session shares divide by sessions; the time share divides by streamed time.

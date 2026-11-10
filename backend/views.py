@@ -19,7 +19,7 @@ def date_range(request):
         error = "Telemetry tables are missing or changed. Check the import."
         return JsonResponse({"error": error}, status=503)
     except psycopg.Error:
-        return JsonResponse({"error": "Database unavailable."}, status=503)
+        return JsonResponse({"error": "Can't reach the data right now. Try again in a minute."}, status=503)
     # The cards show what the processor stored, so the page says how fresh that is.
     try:
         processed = next(iter(repository.query("processed")), None)
@@ -32,7 +32,7 @@ def date_range(request):
     except psycopg.errors.UndefinedTable:
         processed = None
     except psycopg.Error:
-        return JsonResponse({"error": "Database unavailable."}, status=503)
+        return JsonResponse({"error": "Can't reach the data right now. Try again in a minute."}, status=503)
     return JsonResponse({**dates, "recent_start": recent_start(dates["start"], dates["end"]),
                          "processed": processed})
 

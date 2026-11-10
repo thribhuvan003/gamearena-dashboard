@@ -3,7 +3,7 @@
 -- and only those days' streamed time counts. Sessions without any events are never counted as
 -- sessions; they appear only under "Stats but no activity".
 -- Every report takes the same filters: sessions must carry all of %(filters)s,
--- and, when %(reason)s is set, have exactly that reason.
+-- and, when set, have exactly %(reason)s and the error %(error_code)s with that event and reason.
 
 -- report: impact_tags
 -- Sessions per tag. The cards and the filter list both come from this one query.
@@ -16,6 +16,10 @@ FROM active
 JOIN session_analysis a ON a.session_id = active.session_id
 CROSS JOIN LATERAL unnest(a.tags) AS t(tag)
 WHERE a.events > 0 AND a.tags @> %(filters)s::STRING[] AND (%(reason)s = '' OR a.why = %(reason)s)
+    AND (%(error_code)s = '' OR EXISTS (SELECT 1 FROM session_day_error_reasons x
+        WHERE x.session_id = a.session_id AND x.day >= %(start)s::DATE AND x.day < %(end)s::DATE
+            AND x.code = %(error_code)s AND x.event = %(error_event)s
+            AND x.reason = %(error_reason)s AND x.after_end = (%(error_after_end)s = '1')))
 GROUP BY t.tag;
 
 -- report: impact_totals
@@ -31,6 +35,10 @@ WITH days AS (
     SELECT days.*, a.events > 0 AS counted, a.first_ready_ms / 1000 AS ready_seconds
     FROM days JOIN session_analysis a ON a.session_id = days.session_id
     WHERE a.tags @> %(filters)s::STRING[] AND (%(reason)s = '' OR a.why = %(reason)s)
+    AND (%(error_code)s = '' OR EXISTS (SELECT 1 FROM session_day_error_reasons x
+        WHERE x.session_id = a.session_id AND x.day >= %(start)s::DATE AND x.day < %(end)s::DATE
+            AND x.code = %(error_code)s AND x.event = %(error_event)s
+            AND x.reason = %(error_reason)s AND x.after_end = (%(error_after_end)s = '1')))
 )
 SELECT COUNT(*) FILTER (WHERE counted) AS sessions,
     COUNT(*) FILTER (WHERE NOT counted) AS stats_only,
@@ -44,6 +52,80 @@ SELECT COUNT(*) FILTER (WHERE counted) AS sessions,
     (SELECT percentile_disc(0.9) WITHIN GROUP (ORDER BY ready_seconds) FROM picked
         WHERE counted AND ready_seconds IS NOT NULL) AS ready_p90
 FROM picked;
+
+-- report: impact_measures
+-- For every measurement, the typical session and the slowest tenth of sessions, plus the plain
+-- average of all readings. A few long sessions with huge spikes pull the plain average far from
+-- what most players saw, so the cards lead with the typical session.
+WITH active AS (
+    SELECT DISTINCT session_id FROM session_day_analysis
+    WHERE day >= %(start)s::DATE AND day < %(end)s::DATE
+), per_session AS (
+    SELECT m.measure, m.session_id, SUM(m.total) AS total, SUM(m.readings) AS readings,
+        SUM(m.total) / SUM(m.readings)::FLOAT8 AS session_average
+    FROM session_day_measures m
+JOIN active ON active.session_id = m.session_id
+JOIN session_analysis a ON a.session_id = m.session_id
+WHERE m.day >= %(start)s::DATE AND m.day < %(end)s::DATE
+    AND a.events > 0 AND a.tags @> %(filters)s::STRING[] AND (%(reason)s = '' OR a.why = %(reason)s)
+    AND (%(error_code)s = '' OR EXISTS (SELECT 1 FROM session_day_error_reasons x
+        WHERE x.session_id = a.session_id AND x.day >= %(start)s::DATE AND x.day < %(end)s::DATE
+            AND x.code = %(error_code)s AND x.event = %(error_event)s
+            AND x.reason = %(error_reason)s AND x.after_end = (%(error_after_end)s = '1')))
+    GROUP BY m.measure, m.session_id
+)
+SELECT measure, SUM(total) / SUM(readings)::FLOAT8 AS average, SUM(readings)::INT8 AS readings,
+    COUNT(*) AS sessions,
+    percentile_disc(0.5) WITHIN GROUP (ORDER BY session_average) AS typical,
+    percentile_disc(0.9) WITHIN GROUP (ORDER BY session_average) AS high_tenth,
+    percentile_disc(0.1) WITHIN GROUP (ORDER BY session_average) AS low_tenth
+FROM per_session
+GROUP BY measure;
+
+-- report: impact_trend
+-- The headline numbers of each day on its own, for the small trend lines on the cards.
+WITH days AS (
+    SELECT d.day, d.streamed_seconds, d.low_fps_seconds, d.fps_sum, d.fps_valid, a.tags, a.first_ready_ms
+    FROM session_day_analysis d
+    JOIN session_analysis a ON a.session_id = d.session_id
+    WHERE d.day >= %(start)s::DATE AND d.day < %(end)s::DATE
+        AND a.events > 0 AND a.tags @> %(filters)s::STRING[] AND (%(reason)s = '' OR a.why = %(reason)s)
+    AND (%(error_code)s = '' OR EXISTS (SELECT 1 FROM session_day_error_reasons x
+        WHERE x.session_id = a.session_id AND x.day >= %(start)s::DATE AND x.day < %(end)s::DATE
+            AND x.code = %(error_code)s AND x.event = %(error_event)s
+            AND x.reason = %(error_reason)s AND x.after_end = (%(error_after_end)s = '1')))
+)
+SELECT day, COUNT(*) AS sessions,
+    COUNT(*) FILTER (WHERE tags @> ARRAY['tried']) AS tried,
+    COUNT(*) FILTER (WHERE tags @> ARRAY['no_success']) AS never_connected,
+    COALESCE(SUM(streamed_seconds), 0)::INT8 AS streamed_seconds,
+    COALESCE(SUM(low_fps_seconds), 0)::INT8 AS low_fps_seconds,
+    SUM(fps_sum) / NULLIF(SUM(fps_valid), 0)::FLOAT8 AS fps_mean,
+    percentile_disc(0.5) WITHIN GROUP (ORDER BY first_ready_ms / 1000) AS ready_p50
+FROM days
+GROUP BY day
+ORDER BY day;
+
+-- report: impact_error_reasons
+-- Every error code and reason in the selected sessions, with how many sessions had it,
+-- real errors first and retries of an already closed session after them.
+WITH active AS (
+    SELECT DISTINCT session_id FROM session_day_analysis
+    WHERE day >= %(start)s::DATE AND day < %(end)s::DATE
+)
+SELECT r.code, r.event, r.reason, r.after_end, COUNT(DISTINCT r.session_id) AS sessions,
+    SUM(r.events)::INT8 AS events
+FROM session_day_error_reasons r
+JOIN active ON active.session_id = r.session_id
+JOIN session_analysis a ON a.session_id = r.session_id
+WHERE r.day >= %(start)s::DATE AND r.day < %(end)s::DATE
+    AND a.events > 0 AND a.tags @> %(filters)s::STRING[] AND (%(reason)s = '' OR a.why = %(reason)s)
+    AND (%(error_code)s = '' OR EXISTS (SELECT 1 FROM session_day_error_reasons x
+        WHERE x.session_id = a.session_id AND x.day >= %(start)s::DATE AND x.day < %(end)s::DATE
+            AND x.code = %(error_code)s AND x.event = %(error_event)s
+            AND x.reason = %(error_reason)s AND x.after_end = (%(error_after_end)s = '1')))
+GROUP BY r.code, r.event, r.reason, r.after_end
+ORDER BY r.after_end, r.code, sessions DESC, r.reason;
 
 -- report: impact_list
 -- One page of the sessions behind a card, the ones that matter most for that card first.
@@ -59,8 +141,23 @@ JOIN session_analysis a ON a.session_id = active.session_id
 WHERE (a.events = 0) = (%(category)s = 'stats_only')
     AND (%(category)s IN ('all', 'stats_only') OR a.tags @> ARRAY[%(category)s]::STRING[])
     AND a.tags @> %(filters)s::STRING[] AND (%(reason)s = '' OR a.why = %(reason)s)
+    AND (%(error_code)s = '' OR EXISTS (SELECT 1 FROM session_day_error_reasons x
+        WHERE x.session_id = a.session_id AND x.day >= %(start)s::DATE AND x.day < %(end)s::DATE
+            AND x.code = %(error_code)s AND x.event = %(error_event)s
+            AND x.reason = %(error_reason)s AND x.after_end = (%(error_after_end)s = '1')))
     AND strpos(a.session_id::STRING, %(search)s) > 0
-ORDER BY CASE %(category)s
+-- A column the user picked sorts first (empty values last); otherwise the card's own order.
+ORDER BY CASE %(sort)s
+        WHEN 'first_seen' THEN EXTRACT(EPOCH FROM a.first_seen)::FLOAT8
+        WHEN 'streamed' THEN a.streamed_seconds::FLOAT8
+        WHEN 'fps' THEN a.fps_mean
+        WHEN 'low_fps' THEN a.low_fps_seconds::FLOAT8
+        WHEN 'attempts' THEN a.attempts::FLOAT8
+        WHEN 'drops' THEN a.stream_drops::FLOAT8
+        WHEN 'skipped' THEN a.high_skip_seconds::FLOAT8
+        WHEN 'wait' THEN a.first_ready_ms
+        END * (CASE WHEN %(descending)s THEN -1 ELSE 1 END)::FLOAT8 ASC NULLS LAST,
+    CASE %(category)s
         WHEN 'low_fps' THEN -COALESCE(a.fps_mean, 0)
         WHEN 'fps' THEN -COALESCE(a.fps_mean, 0)
         WHEN 'any_low_fps' THEN a.low_fps_seconds::FLOAT8
@@ -87,6 +184,10 @@ JOIN session_analysis a ON a.session_id = active.session_id
 WHERE (a.events = 0) = (%(category)s = 'stats_only')
     AND (%(category)s IN ('all', 'stats_only') OR a.tags @> ARRAY[%(category)s]::STRING[])
     AND a.tags @> %(filters)s::STRING[] AND (%(reason)s = '' OR a.why = %(reason)s)
+    AND (%(error_code)s = '' OR EXISTS (SELECT 1 FROM session_day_error_reasons x
+        WHERE x.session_id = a.session_id AND x.day >= %(start)s::DATE AND x.day < %(end)s::DATE
+            AND x.code = %(error_code)s AND x.event = %(error_event)s
+            AND x.reason = %(error_reason)s AND x.after_end = (%(error_after_end)s = '1')))
     AND strpos(a.session_id::STRING, %(search)s) > 0
 GROUP BY a.why
 ORDER BY sessions DESC, reason;
