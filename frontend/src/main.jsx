@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { getReport } from "./api";
 import { DailyImpact } from "./impact";
 import { Notice, dateLabel, utcTime } from "./format";
+import { readUrl, writeUrl } from "./url";
+import { CopyLinkButton } from "./share";
 import "./style.css";
 
 // Open on the latest complete day: a day that is still filling in makes every number look low.
@@ -15,24 +17,39 @@ function latestDay(range) {
   return day.toISOString().slice(0, 10);
 }
 
-// The cards show what the processor last saved, so say how fresh that is.
-function Processed({ range }) {
+// One line on how fresh everything is: where the data ends, and when the numbers were made.
+function Freshness({ range }) {
   if (!range?.end) return null;
   const processed = range.processed;
   if (!processed?.finished_at)
     return (
       <p className="notice">
-        The numbers haven't been prepared yet. Run process.cmd, then refresh.
+        The numbers are still being prepared. They update every few minutes;
+        refresh shortly.
       </p>
     );
   return (
     <p className={processed.behind ? "notice" : undefined}>
-      Numbers last updated {utcTime(processed.finished_at)} UTC.
+      {range.last_seen && (
+        <span className="nowrap">Data up to {utcTime(range.last_seen)} · </span>
+      )}
+      <span className="nowrap">
+        numbers updated {utcTime(processed.finished_at)} (UTC)
+      </span>
       {processed.behind &&
-        " New data has arrived since; the next update includes it."}
+        ". Newer data has arrived; it appears after the next update."}
     </p>
   );
 }
+
+// A date some days before or after another, as YYYY-MM-DD.
+function shift(day, days) {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function App() {
   const [range, setRange] = useState(null);
@@ -41,13 +58,23 @@ function App() {
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const written = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
     getReport("range", {}, controller.signal)
       .then((data) => {
         setRange(data);
-        if (data.end) {
+        // A link with dates opens on those dates; otherwise the latest complete day.
+        const url = readUrl();
+        if (
+          DAY.test(url.start || "") &&
+          DAY.test(url.end || "") &&
+          url.start <= url.end
+        ) {
+          setPreset("custom");
+          setPeriod({ start: url.start, end: url.end });
+        } else if (data.end) {
           const day = latestDay(data);
           setPeriod({ start: day, end: day });
         }
@@ -59,6 +86,26 @@ function App() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
+  }, []);
+
+  // The dates live in the address bar too, so Back returns to the previous dates.
+  useEffect(() => {
+    if (!period) return;
+    writeUrl({ start: period.start, end: period.end }, !written.current);
+    written.current = true;
+  }, [period]);
+  useEffect(() => {
+    function follow() {
+      const url = readUrl();
+      if (DAY.test(url.start || "") && DAY.test(url.end || ""))
+        setPeriod((current) =>
+          current?.start === url.start && current?.end === url.end
+            ? current
+            : { start: url.start, end: url.end },
+        );
+    }
+    window.addEventListener("popstate", follow);
+    return () => window.removeEventListener("popstate", follow);
   }, []);
 
   function choose(next, selected) {
@@ -90,7 +137,9 @@ function App() {
       } else if (preset === "all")
         setPeriod({ start: next.start, end: next.end });
       else if (preset === "recent")
-        setPeriod({ start: next.recent_start, end: next.end });
+        setPeriod({ start: shift(latestDay(next), -29), end: latestDay(next) });
+      else if (preset === "week")
+        setPeriod({ start: shift(latestDay(next), -6), end: latestDay(next) });
       setRevision((value) => value + 1);
     } catch (error) {
       setError(error.message);
@@ -103,20 +152,64 @@ function App() {
     <main className="dashboard">
       <header className="page-header">
         <h1>GameArena insights</h1>
-        {/* Refresh re-reads the database for the whole page, so it sits with the page title. */}
+        {/* Refresh re-reads the database for the whole page, so it sits with the page title.
+            The link holds the dates, filters and open list, so it shares this exact view. */}
         <div className="header-actions">
-          <span className="local-badge">Local data · times in UTC</span>
+          <CopyLinkButton />
           <button disabled={loading} onClick={refresh}>
             Refresh data
           </button>
         </div>
       </header>
       <section className="period-panel" aria-label="Report period">
-        <div className="preset-buttons">
+        <div className="date-bar">
+          <div className="segmented" role="group" aria-label="Dates">
+            {range?.end &&
+              [
+                [
+                  "day",
+                  "Latest day",
+                  () => ({ start: latestDay(range), end: latestDay(range) }),
+                ],
+                [
+                  "week",
+                  "Last 7 days",
+                  () => ({
+                    start: shift(latestDay(range), -6),
+                    end: latestDay(range),
+                  }),
+                ],
+                [
+                  "recent",
+                  "Last 30 days",
+                  () => ({
+                    start: shift(latestDay(range), -29),
+                    end: latestDay(range),
+                  }),
+                ],
+                [
+                  "all",
+                  "All data",
+                  () => ({ start: range.start, end: range.end }),
+                ],
+              ].map(([key, label, dates]) => (
+                <button
+                  key={key}
+                  aria-pressed={
+                    Boolean(period) &&
+                    dates().start === period.start &&
+                    dates().end === period.end
+                  }
+                  disabled={loading}
+                  onClick={() => choose(dates(), key)}
+                >
+                  {label}
+                </button>
+              ))}
+          </div>
           <label className="day-selector">
-            Day (UTC)
+            Pick a day
             <input
-              aria-label="Selected day"
               type="date"
               disabled={loading}
               value={period?.end || ""}
@@ -124,7 +217,7 @@ function App() {
                 if (event.target.value)
                   choose(
                     { start: event.target.value, end: event.target.value },
-                    "day",
+                    "custom",
                   );
               }}
             />
@@ -135,35 +228,8 @@ function App() {
             {dateLabel(period.start)} – {dateLabel(period.end)}
           </p>
         )}
-        {period?.end === range?.end && range?.last_seen && (
-          <p>
-            Data until{" "}
-            {new Date(range.last_seen).toLocaleTimeString("en-GB", {
-              timeZone: "UTC",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}{" "}
-            UTC on {dateLabel(range.end)}.
-          </p>
-        )}
         <details className="custom-dates">
-          <summary>Choose a date range</summary>
-          <div className="preset-buttons">
-            <button
-              disabled={!range?.start || loading}
-              onClick={() => choose(range, "all")}
-            >
-              All data
-            </button>
-            <button
-              disabled={!range?.recent_start || loading}
-              onClick={() =>
-                choose({ start: range.recent_start, end: range.end }, "recent")
-              }
-            >
-              Latest 30 stored days
-            </button>
-          </div>
+          <summary>Pick a range</summary>
           <form
             className="date-form"
             key={period?.start + "-" + period?.end}
@@ -188,13 +254,13 @@ function App() {
               />
             </label>
             <button type="submit" disabled={loading}>
-              Apply dates
+              Show these dates
             </button>
           </form>
         </details>
-        <Processed range={range} />
+        <Freshness range={range} />
         <Notice error={error} loading={loading}>
-          Reading available dates…
+          Loading dates…
         </Notice>
         {range && !range.end && (
           <p>No telemetry stored yet. Import the data, then refresh.</p>

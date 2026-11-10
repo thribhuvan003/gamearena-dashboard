@@ -5,37 +5,47 @@ import { Info, Notice, Pages, number, utcTime } from "./format";
 // Units are not documented by the client; these match the value ranges in the data.
 const MEASURES = [
   ["fps", "FPS", ""],
-  ["latency", "Latency", " ms"],
-  ["jitter", "Jitter", " ms"],
-  ["bitrate", "Bitrate", " Mbps"],
+  ["latency", "delay", " ms"],
+  ["jitter", "delay variation", " ms"],
+  ["bitrate", "video data rate", " Mbps"],
 ];
 
-// Every measurement the player app sends, in plain words. Units are not documented by the
-// client; these match the value ranges in the data and should be confirmed by the team.
+// Every measurement the player app sends. Checked in the data: readings are 1,000 ms apart,
+// 10 per batch, and none is a running total (each goes up and down). Exact definitions and
+// units live in the player app's code, so anything not checked here says so.
 const MEASUREMENTS = {
-  fps: ["Frames per second", "How smooth the video was. 30 is the idle rate."],
-  latency: ["Delay (ms)", "Time for a signal to go to the host and back."],
-  jitter: ["Delay variation (ms)", "How much the delay jumped around."],
-  bitrate: [
-    "Video data rate (Mbps)",
-    "How much video data arrived each second.",
+  fps: [
+    "Frames per second",
+    "Video frames in that second, as the player app reports them. Always a whole number. 30 is the idle rate.",
   ],
-  downloadSpeed: ["Download speed (Mbps)", "The player's internet speed."],
+  latency: [
+    "Delay (ms)",
+    "Delay between player and host in that second, as the app reports it. Whether it is one way or the round trip is not documented.",
+  ],
+  jitter: [
+    "Delay variation (ms)",
+    "How much the delay varied in that second, as the app reports it.",
+  ],
+  bitrate: ["Video data rate (Mbps)", "Video data received in that second."],
+  downloadSpeed: [
+    "Download speed (Mbps)",
+    "The player's download speed in that second, as the app measures it.",
+  ],
   decodeDuration: [
     "Time to show a frame (ms)",
-    "Player-side time to decode one frame.",
+    "How long the player took to get a frame ready to show, in that second.",
   ],
   encodeDuration: [
     "Time to prepare a frame (ms)",
-    "Host-side time to encode one frame.",
+    "How long the host took to prepare a frame to send, in that second.",
   ],
   skippedFrames: [
-    "Skipped frames per second",
-    "Frames dropped instead of shown.",
+    "Skipped frames",
+    "Frames skipped (not shown) in that second. A count for that second, not a running total.",
   ],
   accumulatedFrames: [
-    "Frames waiting",
-    "Frames queued to be shown. Around 1 is normal.",
+    "Accumulated frames",
+    "The app's own measure; its exact meaning is not documented. Not a running total and often a fraction, so likely an average within the second. Around 1 is typical in this data.",
   ],
 };
 
@@ -48,18 +58,18 @@ const WHO = {
 };
 
 // Plain names for the events a founder is most likely to see. The raw name stays underneath.
-const EVENTS = {
+export const EVENTS = {
   "pipeline.connect.attempt": "Tried to connect",
   "pipeline.connect.success": "Connected, video started",
   "pipeline.connect.failure": "Connection error",
   "pipeline.connection.dropped": "Connection dropped",
   "media.decode.error": "Video could not be decoded",
-  "ice.connection.state": "Network route changed",
+  "ice.connection.state": "Network path changed",
   "media.first_decode": "First video frame",
   "webrtc.connection.state": "Video connection changed",
-  "ice.candidate.error": "Network route error (usually harmless)",
-  "ice.gathering.complete": "Network routes found",
-  "ice.restart": "Network route restarted",
+  "ice.candidate.error": "One network path failed (usually harmless)",
+  "ice.gathering.complete": "Network paths found",
+  "ice.restart": "Network path restarted",
   "ws.connect": "Connection channel opened",
   "ws.disconnect": "Connection channel lost",
   "ws.reconnect.attempt": "Connection channel retry",
@@ -76,6 +86,7 @@ const EVENTS = {
 };
 
 const WHO_SENT = { client: "player app", host: "host", system: "server" };
+const LEVELS = { error: "Error", warn: "Warning", info: "Normal" };
 const ROLES = { client: "player", host: "host" };
 
 function plain(names, words) {
@@ -105,20 +116,21 @@ const CONNECTION_NOTES = {
 };
 const PERFORMANCE_NOTES = {
   Measurement:
-    "What the player app measured. Units are our reading of the values; the team should confirm them.",
+    "What the player app measured, with the app's own field name underneath. Units are read from the value ranges; the team should confirm them.",
   Average:
-    "Add up every per-second reading and divide by how many there are. Covers every player in this session on the selected dates.",
-  Lowest: "The smallest single-second reading.",
-  Highest: "The biggest single-second reading.",
+    "The mean: add up every reading and divide by how many there are. One reading per second, for this session on the selected dates. If two players report in the same second, both readings count; that is rare (about 0.03% of seconds).",
+  Lowest: "The lowest single reading, so the worst or best one second.",
+  Highest: "The highest single reading, so the worst or best one second.",
   "Seconds measured":
-    "How many per-second readings the app sent. 60 is one minute.",
+    "How many readings were used. Readings are 1 second apart, so 60 is one minute of streaming.",
   "Seconds with no value":
     "Seconds where the value was empty or not a usable number. They are left out of the average.",
 };
 const EVENT_NOTES = {
-  Event: "Plain name of what happened, with the app's own name underneath.",
+  "What happened": "What happened, in plain words.",
+  "App's event name": "The name the app itself gives this event.",
   Level:
-    "error: something failed. warn: something went wrong but may have recovered. info: normal activity.",
+    "Error: something failed. Warning: something went wrong but may have recovered. Normal: everyday activity.",
   "Sent by":
     "Which side logged the event: the server, the player app or the host.",
   Connection: "The connection the event belongs to, if any.",
@@ -126,20 +138,54 @@ const EVENT_NOTES = {
     "The code, the part of the app (stage) and the step, exactly as the app sent them.",
   "Message from the app":
     "The event exactly as the app sent it, unchanged: its message and every field.",
-  "Video wait":
+  "Time to video":
     "On a successful connect: time from connecting to the first video frame.",
 };
 
-function DataTable({ columns, rows, label, empty, notes = {} }) {
+// Columns holding numbers line up on the right, so they compare at a glance.
+const NUMERIC = new Set([
+  "Attempts",
+  "Connected",
+  "Connection errors",
+  "Disconnects",
+  "Reconnects",
+  "Average",
+  "Lowest",
+  "Highest",
+  "Seconds measured",
+  "Seconds with no value",
+  "Time to video",
+]);
+
+function DataTable({
+  columns: allColumns,
+  rows: allRows,
+  label,
+  empty,
+  notes = {},
+  tall = false,
+}) {
+  // A column that is empty on every row is left out; it would only show dashes.
+  const keep = allColumns.map(
+    (_, i) =>
+      !allRows.length ||
+      allRows.some((row) => row[i] != null && row[i] !== "—"),
+  );
+  const columns = allColumns.filter((_, i) => keep[i]);
+  const rows = allRows.map((row) => row.filter((_, i) => keep[i]));
   return (
-    <div className="table-scroll">
+    <div className={"table-scroll" + (tall ? " tall" : "")}>
       <table aria-label={label}>
         <thead>
           <tr>
             {columns.map((column) => (
-              <th scope="col" key={column}>
+              <th
+                scope="col"
+                key={column}
+                className={NUMERIC.has(column) ? "num" : undefined}
+              >
                 {column}
-                {notes[column] && <Info>{notes[column]}</Info>}
+                {notes[column] && <Info topic={column}>{notes[column]}</Info>}
               </th>
             ))}
           </tr>
@@ -148,7 +194,11 @@ function DataTable({ columns, rows, label, empty, notes = {} }) {
           {rows.map((row, index) => (
             <tr key={index}>
               {row.map((cell, i) => (
-                <td key={columns[i]} data-label={columns[i]}>
+                <td
+                  key={columns[i]}
+                  data-label={columns[i]}
+                  className={NUMERIC.has(columns[i]) ? "num" : undefined}
+                >
                   {cell ?? "—"}
                 </td>
               ))}
@@ -156,19 +206,19 @@ function DataTable({ columns, rows, label, empty, notes = {} }) {
           ))}
         </tbody>
       </table>
-      {!rows.length && <p>{empty || "Nothing recorded in these dates."}</p>}
+      {!rows.length && <p>{empty || "Nothing recorded on these dates."}</p>}
     </div>
   );
 }
 
 // A summary tile. Tiles with an action open the matching events below.
-function Tile({ label, value, onOpen, info }) {
+function Tile({ label, value, onOpen, info, sub }) {
   return (
     <div className="panel">
-      <h4>
+      <h3>
         {label}
-        {info && <Info>{info}</Info>}
-      </h4>
+        {info && <Info topic={label}>{info}</Info>}
+      </h3>
       {onOpen ? (
         <button className="metric-number tile-link" onClick={onOpen}>
           {value}
@@ -176,7 +226,143 @@ function Tile({ label, value, onOpen, info }) {
       ) : (
         <strong>{value}</strong>
       )}
+      {sub && <small>{sub}</small>}
     </div>
+  );
+}
+
+const TECHNICAL_KEY = "gamearena.technical";
+const TABS = [
+  ["events", "What happened"],
+  ["performance", "Stream quality"],
+  ["connections", "Connections"],
+];
+
+// How the server says a session ended, in plain words. The app's own value shows in technical details.
+const ENDINGS = {
+  "Device deleted": "gaming server removed",
+  "Not in use": "closed while not in use",
+  "Ended by user": "ended by the user",
+};
+
+// Stream quality in one sentence: only facts measured in this session.
+function verdict(metrics, batches) {
+  if (!batches)
+    return "The player app sent no stream readings for this session.";
+  const fps = metrics.find((m) => m.metric === "fps");
+  const delay = metrics.find((m) => m.metric === "latency");
+  const parts = [];
+  if (fps?.valid) {
+    const under = fps.under_30 / fps.valid;
+    parts.push(
+      under === 0
+        ? "never under 30 FPS"
+        : `under 30 FPS for ${number(under * 100, 1)}% of the time`,
+    );
+  }
+  if (delay?.valid)
+    parts.push(
+      `typical delay ${number(delay.mean, 0)}\u00a0ms (worst second ${number(delay.maximum, 0)}\u00a0ms)`,
+    );
+  return parts.length ? "Stream quality: " + parts.join(" · ") + "." : "";
+}
+
+// The few stream numbers a founder can act on, each with its average and one telling extreme.
+const QUALITY_TILES = [
+  [
+    "fps",
+    "Frames per second",
+    "",
+    (m) => `${number((m.under_30 / m.valid) * 100, 1)}% of the time under 30`,
+  ],
+  [
+    "latency",
+    "Delay",
+    "\u00a0ms",
+    (m) => `Worst second: ${number(m.maximum, 0)}\u00a0ms`,
+  ],
+  [
+    "downloadSpeed",
+    "Download speed",
+    "\u00a0Mbps",
+    (m) => `Lowest: ${number(m.minimum, 1)}\u00a0Mbps`,
+  ],
+  [
+    "bitrate",
+    "Video data rate",
+    "\u00a0Mbps",
+    (m) => `Lowest: ${number(m.minimum, 1)}\u00a0Mbps`,
+  ],
+  [
+    "skippedFrames",
+    "Skipped frames each second",
+    "",
+    (m) => `Worst second: ${number(m.maximum, 0)}`,
+  ],
+];
+
+// Events: plain columns for everyone; the app's own names and raw messages only with technical details.
+function EventTable({ items, technical }) {
+  const days = new Set(items.map((e) => utcTime(e.recorded_at).split(",")[0]));
+  const oneDay = days.size === 1;
+  const time = (value) =>
+    oneDay ? utcTime(value, true).split(", ")[1] : utcTime(value, true);
+  return (
+    <>
+      {oneDay && items.length > 0 && (
+        <p className="table-note">All on {[...days][0]} (UTC).</p>
+      )}
+      <DataTable
+        label="Session events"
+        notes={EVENT_NOTES}
+        tall
+        columns={[
+          "Time",
+          "What happened",
+          "Level",
+          "Sent by",
+          ...(technical
+            ? [
+                "App's event name",
+                "Connection",
+                "Error details",
+                "Message from the app",
+              ]
+            : []),
+        ]}
+        rows={items.map((e) => [
+          time(e.recorded_at),
+          EVENTS[e.pipeline_event || e.event_type] ||
+            e.pipeline_event ||
+            e.event_type,
+          <span className={"chip " + e.level}>
+            {LEVELS[e.level] || e.level}
+          </span>,
+          plain(e.source, WHO_SENT),
+          ...(technical
+            ? [
+                <code>{e.pipeline_event || e.event_type}</code>,
+                e.connection_id || "—",
+                [
+                  e.error_code && "code " + e.error_code,
+                  e.stage && "stage " + e.stage,
+                  e.phase && "phase " + e.phase,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "—",
+                <details>
+                  <summary>Show</summary>
+                  <pre className="raw-event">
+                    {[e.message, JSON.stringify(e.payload, null, 2)]
+                      .filter(Boolean)
+                      .join("\n\n")}
+                  </pre>
+                </details>,
+              ]
+            : []),
+        ])}
+      />
+    </>
   );
 }
 
@@ -191,6 +377,25 @@ function duration(row) {
 // One session from our own telemetry: summary, then events, performance and connections.
 export function SessionDetail({ id, period, onClose }) {
   const [whole, setWhole] = useState(false);
+  // Engineers switch this on once; the choice is remembered on this computer.
+  const [technical, setTechnical] = useState(() => {
+    try {
+      return localStorage.getItem(TECHNICAL_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  function showTechnical(on) {
+    setTechnical(on);
+    if (!on)
+      setTab((current) => (current === "connections" ? "events" : current));
+    try {
+      localStorage.setItem(TECHNICAL_KEY, on ? "1" : "0");
+    } catch {
+      // Private windows can block storage; the switch still works for this visit.
+    }
+  }
+  const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState("events");
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(1);
@@ -203,7 +408,8 @@ export function SessionDetail({ id, period, onClose }) {
   // Connections come with the summary, and a session without stats has no batches to page.
   const pagedName = {
     events: "sessions/" + id + "/events",
-    performance: row?.batches ? "sessions/" + id + "/buckets" : null,
+    performance:
+      row?.batches && technical ? "sessions/" + id + "/buckets" : null,
   }[tab];
   const list = useReport(pagedName, { ...scope, ...filters, page });
   const metric = (name) => detail.metrics.find((m) => m.metric === name);
@@ -212,6 +418,7 @@ export function SessionDetail({ id, period, onClose }) {
   // Opens as a pop-up over the list. Esc, the Close button or a click outside closes it.
   useEffect(() => {
     dialog.current?.showModal();
+    dialog.current?.querySelector("h2")?.focus();
   }, []);
 
   function showEvents(level) {
@@ -237,137 +444,165 @@ export function SessionDetail({ id, period, onClose }) {
         if (event.target === dialog.current) dialog.current.close();
       }}
     >
-      <button onClick={() => dialog.current.close()}>Close</button>
-      <h3>Session</h3>
-      <p className="session-id">{id}</p>
-      <button
-        aria-pressed={whole}
-        onClick={() => {
-          setWhole(!whole);
-          setPage(1);
-        }}
-      >
-        {whole ? "Selected dates only" : "Whole session"}
-      </button>
-      <p>Times in UTC.</p>
+      <header className="detail-head">
+        <h2 tabIndex={-1} className="panel-title">
+          Session{" "}
+          <code className="session-id" title={id}>
+            {id.slice(0, 8)}…
+          </code>
+        </h2>
+        <button
+          className="copy-id"
+          onClick={() =>
+            navigator.clipboard?.writeText(id).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            })
+          }
+        >
+          {copied ? "Copied" : "Copy ID"}
+        </button>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={technical}
+            onChange={(event) => showTechnical(event.target.checked)}
+          />
+          Technical details
+        </label>
+        <button className="close" onClick={() => dialog.current.close()}>
+          Close
+        </button>
+      </header>
+      <div className="date-bar">
+        <span>Showing</span>
+        <div
+          className="segmented"
+          role="group"
+          aria-label="Which dates to show"
+        >
+          {[
+            [false, "Selected dates"],
+            [true, "Whole session"],
+          ].map(([value, label]) => (
+            <button
+              key={label}
+              aria-pressed={whole === value}
+              onClick={() => {
+                setWhole(value);
+                setPage(1);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <Notice {...result} />
 
       {detail && (
         <>
-          {row.why && (
-            <p>
-              <strong>{row.why}</strong>
-              <Info>
-                Our plain-words summary of the furthest step this session
-                reached. The app's own message is below and in the Events tab.
-              </Info>
-            </p>
-          )}
+          <p className="detail-story">
+            <strong>{row.why || "Not worked out yet"}</strong>
+            {row.end_reason &&
+              ` · Ended: ${ENDINGS[row.end_reason] || row.end_reason}`}
+            <Info topic="How far it got">
+              How far this session got, in plain words, and why the server
+              closed it. &quot;Gaming server removed&quot; means the cloud
+              gaming server was taken away, by the provider or during a test, so
+              it is not an error in the session.
+            </Info>
+          </p>
           {row.last_error_message && (
-            <p>
-              Latest connection error, exactly as the app sent it:{" "}
-              <code>{row.last_error_message}</code>
+            <p className="app-said">
+              What the app said: <q>{row.last_error_message}</q>
             </p>
           )}
-          <p>Whole session: {row.tags.join(" · ") || "not tagged yet"}</p>
           <div className="metric-grid">
-            <Tile
-              label="Started"
-              value={utcTime(row.started_at)}
-              info="When the server logged the session start (UTC)."
-            />
-            <Tile
-              label="Ended"
-              value={row.ended_at ? utcTime(row.ended_at) : "No end recorded"}
-              info="When the server logged the session end (UTC)."
-            />
+            {row.first_ready_ms != null && (
+              <Tile
+                label="Time to video"
+                info="Time from connecting to the first video frame, for the first successful connect."
+                value={number(row.first_ready_ms / 1000, 1) + "\u00a0s"}
+              />
+            )}
             <Tile
               label="Duration"
               value={duration(row)}
               info="End minus start. With no end recorded, it runs to the last event, so it is a minimum."
             />
             <Tile
-              label="Ended because"
-              value={row.end_reason || "—"}
-              info="The reason the server gave for closing the session. Device deleted means the cloud gaming server was removed, by the provider or during a test, so it is not an error in the session."
-            />
-            <Tile
-              label="Wait until video"
-              info="Time from connecting to the first video frame, for the first successful connect."
-              value={
-                row.first_ready_ms == null
-                  ? "Never got video"
-                  : number(row.first_ready_ms / 1000, 1) + " s"
-              }
-            />
-            <Tile
-              label="Connect attempts"
+              label="Attempts"
               value={number(row.attempts)}
               info="How many times the app tried to connect."
             />
             <Tile
-              label="Host connections"
-              value={number(row.host_connections)}
-              info="Different host connections in this session. Usually 1."
-            />
-            <Tile
-              label="Player connections"
-              value={number(row.client_connections)}
-              info="Different player connections. A player who leaves and rejoins gets a new connection, so this counts joins, not people."
-            />
-            <Tile
-              label="Who joined"
-              info="How players joined: as the owner, through a share link, or as an external user."
-              value={
-                row.access_modes
-                  ? [
-                      ...new Set(
-                        row.access_modes.split(", ").map((m) => WHO[m] || m),
-                      ),
-                    ].join(", ")
-                  : "—"
-              }
-            />
-            <Tile
-              label="Stream drops"
-              value={number(row.stream_drops)}
-              info="Times the video connection went from connected to lost while playing."
-            />
-            <Tile
-              label="Disconnects"
-              value={number(row.disconnects)}
-              info="Times a player left."
-            />
-            <Tile
-              label="Reconnects"
-              value={number(row.reconnects)}
-              info="Times a player came back."
-            />
-            <Tile
-              label="Errors"
+              label="Error events"
               value={number(row.errors)}
               onOpen={row.errors ? () => showEvents("error") : null}
               info="Events the app marked as errors. Click the number to see them."
             />
-            <Tile
-              label="Warnings"
-              value={number(row.warnings)}
-              onOpen={row.warnings ? () => showEvents("warn") : null}
-              info="Events marked as warnings: something went wrong but may have recovered. Click the number to see them."
-            />
-            {row.batches ? (
-              MEASURES.map(([name, label, unit]) => (
-                <Tile
-                  key={name}
-                  label={"Avg " + label}
-                  value={number(metric(name)?.mean, 1) + unit}
-                  info="Average of every per-second reading in this session. The Performance tab shows how it is worked out."
-                />
-              ))
-            ) : (
-              <Tile label="Stream stats" value="None sent" />
-            )}
           </div>
+          <p className="verdict">{verdict(detail.metrics, row.batches)}</p>
+          <details>
+            <summary>More numbers</summary>
+            <div className="metric-grid">
+              <Tile
+                label="Started"
+                value={utcTime(row.started_at)}
+                info="When the server logged the session start (UTC)."
+              />
+              <Tile
+                label="Ended"
+                value={row.ended_at ? utcTime(row.ended_at) : "No end recorded"}
+                info="When the server logged the session end (UTC)."
+              />
+              <Tile
+                label="Who joined"
+                info="How players joined: as the owner, through a share link, or as an external user."
+                value={
+                  row.access_modes
+                    ? [
+                        ...new Set(
+                          row.access_modes.split(", ").map((m) => WHO[m] || m),
+                        ),
+                      ].join(", ")
+                    : "—"
+                }
+              />
+              <Tile
+                label="Player joins"
+                value={number(row.client_connections)}
+                info="How many times a player joined. Someone who leaves and comes back counts again, so this counts joins, not people."
+              />
+              <Tile
+                label="Lost video while playing"
+                value={number(row.stream_drops)}
+                info="Times the video connection went from connected to lost while playing."
+              />
+              <Tile
+                label="Players who left"
+                value={number(row.disconnects)}
+                info="Times a player left."
+              />
+              <Tile
+                label="Players who came back"
+                value={number(row.reconnects)}
+                info="Times a player came back."
+              />
+              <Tile
+                label="Warnings"
+                value={number(row.warnings)}
+                onOpen={row.warnings ? () => showEvents("warn") : null}
+                info="Events marked as warnings: something went wrong but may have recovered. Click the number to see them."
+              />
+            </div>
+          </details>
+          {technical && (
+            <p className="technical-note">
+              Appears in (whole session): {row.tags.join(" · ") || "—"}
+            </p>
+          )}
 
           <div
             className="tabs"
@@ -375,19 +610,21 @@ export function SessionDetail({ id, period, onClose }) {
             aria-label="Session sections"
             ref={tabs}
           >
-            {["events", "performance", "connections"].map((name) => (
-              <button
-                key={name}
-                role="tab"
-                aria-selected={tab === name}
-                onClick={() => {
-                  setTab(name);
-                  setPage(1);
-                }}
-              >
-                {name[0].toUpperCase() + name.slice(1)}
-              </button>
-            ))}
+            {TABS.filter(([name]) => technical || name !== "connections").map(
+              ([name, label]) => (
+                <button
+                  key={name}
+                  role="tab"
+                  aria-selected={tab === name}
+                  onClick={() => {
+                    setTab(name);
+                    setPage(1);
+                  }}
+                >
+                  {label}
+                </button>
+              ),
+            )}
           </div>
 
           {tab === "events" && (
@@ -397,13 +634,16 @@ export function SessionDetail({ id, period, onClose }) {
                 className="session-filters"
                 key={JSON.stringify(filters)}
                 onSubmit={filterEvents}
+                onChange={(event) => event.currentTarget.requestSubmit()}
               >
                 <label>
                   Level
                   <select name="level" defaultValue={filters.level || ""}>
                     <option value="">All</option>
                     {["error", "warn", "info"].map((level) => (
-                      <option key={level}>{level}</option>
+                      <option key={level} value={level}>
+                        {LEVELS[level]}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -424,75 +664,33 @@ export function SessionDetail({ id, period, onClose }) {
                     ))}
                   </select>
                 </label>
-                <label>
-                  Connection
-                  <select
-                    name="connection"
-                    defaultValue={filters.connection || ""}
-                  >
-                    <option value="">All</option>
-                    <option value="missing">Not tied to a connection</option>
-                    {detail.connections
-                      .map((c) => c.connection_id)
-                      .filter(Boolean)
-                      .map((connection) => (
-                        <option key={connection}>{connection}</option>
-                      ))}
-                  </select>
-                </label>
-                <button>Filter</button>
+                {technical && (
+                  <label>
+                    Connection
+                    <select
+                      name="connection"
+                      defaultValue={filters.connection || ""}
+                    >
+                      <option value="">All</option>
+                      <option value="missing">Not tied to a connection</option>
+                      {detail.connections
+                        .map((c) => c.connection_id)
+                        .filter(Boolean)
+                        .map((connection) => (
+                          <option key={connection}>{connection}</option>
+                        ))}
+                    </select>
+                  </label>
+                )}
               </form>
               <Notice {...list} />
               {list.data && (
-                <DataTable
-                  label="Session events"
-                  notes={EVENT_NOTES}
-                  columns={[
-                    "Time",
-                    "Event",
-                    "Level",
-                    "Sent by",
-                    "Connection",
-                    "Error details",
-                    "Message from the app",
-                    "Video wait",
-                  ]}
-                  rows={list.data.items.map((e) => [
-                    utcTime(e.recorded_at),
-                    <>
-                      {EVENTS[e.pipeline_event || e.event_type] ||
-                        e.pipeline_event ||
-                        e.event_type}
-                      <small>{e.pipeline_event || e.event_type}</small>
-                    </>,
-                    e.level,
-                    plain(e.source, WHO_SENT),
-                    e.connection_id || "—",
-                    [
-                      e.error_code && "code " + e.error_code,
-                      e.stage && "stage " + e.stage,
-                      e.phase && "step " + e.phase,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "—",
-                    <details>
-                      <summary>Show</summary>
-                      <pre className="raw-event">
-                        {[e.message, JSON.stringify(e.payload, null, 2)]
-                          .filter(Boolean)
-                          .join("\n\n")}
-                      </pre>
-                    </details>,
-                    e.ready_ms == null
-                      ? "—"
-                      : number(e.ready_ms / 1000, 1) + " s",
-                  ])}
-                />
+                <EventTable items={list.data.items} technical={technical} />
               )}
             </>
           )}
 
-          {tab === "connections" && (
+          {tab === "connections" && technical && (
             <DataTable
               label="Session connections"
               notes={CONNECTION_NOTES}
@@ -526,73 +724,99 @@ export function SessionDetail({ id, period, onClose }) {
           {tab === "performance" &&
             (row.batches ? (
               <>
-                <p>
-                  The player app sends one reading per second for each
-                  measurement. Average, lowest and highest are over those
-                  seconds. Use the "i" buttons for how each is worked out.
-                </p>
-                <DataTable
-                  label="Session performance summary"
-                  notes={PERFORMANCE_NOTES}
-                  columns={[
-                    "Measurement",
-                    "Average",
-                    "Lowest",
-                    "Highest",
-                    "Seconds measured",
-                    "Seconds with no value",
-                  ]}
-                  rows={detail.metrics.map((m) => [
-                    <>
-                      {MEASUREMENTS[m.metric]?.[0] || m.metric}
-                      <small>{MEASUREMENTS[m.metric]?.[1]}</small>
-                    </>,
-                    number(m.mean, 1),
-                    number(m.minimum, 1),
-                    number(m.maximum, 1),
-                    number(m.valid),
-                    number(m.missing),
-                  ])}
-                />
-                <h4>
-                  Every 10 seconds
-                  <Info>
-                    The app sends its readings in batches of about 10 seconds.
-                    Each row is one batch; each number is the average of that
-                    batch&apos;s readings.
-                  </Info>
-                </h4>
-                <Notice {...list} />
-                {list.data && (
-                  <DataTable
-                    label="Session stats batches"
-                    columns={["Start", "End", ...MEASURES.map((m) => m[1])]}
-                    rows={list.data.items.map((b) => [
-                      utcTime(b.bucket_start),
-                      utcTime(b.bucket_end),
-                      ...MEASURES.map(([name, , unit]) =>
-                        b.metrics?.[name]
-                          ? number(b.metrics[name].mean, 1) + unit
-                          : "—",
-                      ),
-                    ])}
-                  />
+                <div className="metric-grid">
+                  {QUALITY_TILES.map(([name, label, unit, describe]) => {
+                    const m = metric(name);
+                    return (
+                      m && (
+                        <Tile
+                          key={name}
+                          label={label}
+                          value={number(m.mean, 1) + unit}
+                          sub={describe(m)}
+                          info={MEASUREMENTS[name][1]}
+                        />
+                      )
+                    );
+                  })}
+                </div>
+                {technical && (
+                  <>
+                    <p>
+                      The player app records one reading per second for each
+                      measurement and sends them in groups of 10. Each reading
+                      is that second&apos;s own value, not a running total.
+                    </p>
+                    <DataTable
+                      label="Session performance summary"
+                      notes={PERFORMANCE_NOTES}
+                      columns={[
+                        "Measurement",
+                        "Average",
+                        "Lowest",
+                        "Highest",
+                        "Seconds measured",
+                        "Seconds with no value",
+                      ]}
+                      rows={detail.metrics.map((m) => [
+                        <>
+                          {MEASUREMENTS[m.metric]?.[0] || m.metric}
+                          <small>{m.metric}</small>
+                        </>,
+                        number(m.mean, 1),
+                        number(m.minimum, 1),
+                        number(m.maximum, 1),
+                        number(m.valid),
+                        number(m.missing),
+                      ])}
+                    />
+                    <h3>
+                      Every 10 seconds
+                      <Info topic="Every 10 seconds">
+                        Each row is one group of 10 readings; each number is the
+                        average of that group.
+                      </Info>
+                    </h3>
+                    <Notice {...list} />
+                    {list.data && (
+                      <DataTable
+                        label="Session stats batches"
+                        columns={[
+                          "Start",
+                          "End",
+                          ...Object.values(MEASUREMENTS).map(
+                            ([title]) => title,
+                          ),
+                        ]}
+                        rows={list.data.items.map((b) => [
+                          utcTime(b.bucket_start, true),
+                          utcTime(b.bucket_end, true),
+                          ...Object.keys(MEASUREMENTS).map((name) =>
+                            b.metrics?.[name]
+                              ? number(b.metrics[name].mean, 1)
+                              : "—",
+                          ),
+                        ])}
+                      />
+                    )}
+                  </>
                 )}
               </>
             ) : (
               <p>
-                This session sent no performance stats, so there is no FPS,
-                latency or bitrate to show. Its events and connections are still
-                here.
+                The player app sent no stream readings for this session, so
+                there is nothing to show here.
               </p>
             ))}
 
-          {tab !== "connections" && (tab === "events" || row.batches > 0) && (
+          {(tab === "events" ||
+            (tab === "performance" && technical && row.batches > 0)) && (
             <Pages
               data={list.data}
               page={page}
               onChange={setPage}
               busy={list.loading}
+              noun={tab === "events" ? "events" : "groups of 10 readings"}
             />
           )}
         </>

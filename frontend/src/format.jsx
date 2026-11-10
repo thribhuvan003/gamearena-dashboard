@@ -16,21 +16,29 @@ export function dateLabel(day) {
   });
 }
 
-export function utcTime(value) {
+export function utcTime(value, withSeconds = false) {
   return value
-    ? new Date(value).toLocaleString("en-GB", { timeZone: "UTC" })
+    ? new Date(value).toLocaleString("en-GB", {
+        timeZone: "UTC",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        ...(withSeconds ? { second: "2-digit" } : {}),
+      })
     : "—";
 }
 
 // A small round "i" button. Clicking it shows what a number means and how it is worked out.
-export function Info({ children }) {
+export function Info({ children, topic }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="info">
       <button
         type="button"
         className="info-button"
-        aria-label="What does this mean?"
+        aria-label={topic ? `What is "${topic}"?` : "What does this mean?"}
         aria-expanded={open}
         onClick={(event) => {
           event.stopPropagation();
@@ -65,7 +73,7 @@ export function Notice({ error, loading, children }) {
   return null;
 }
 
-export function Pages({ data, page, onChange, busy }) {
+export function Pages({ data, page, onChange, busy, noun = "rows" }) {
   if (!data) return null;
   return (
     <div className="preset-buttons">
@@ -73,7 +81,9 @@ export function Pages({ data, page, onChange, busy }) {
         Previous
       </button>
       <span role="status">
-        Page {page} · {number(data.total)} rows
+        Page {page} of{" "}
+        {number(Math.max(1, Math.ceil(data.total / data.page_size)))} ·{" "}
+        {number(data.total)} {noun}
       </span>
       <button
         disabled={busy || page * data.page_size >= data.total}

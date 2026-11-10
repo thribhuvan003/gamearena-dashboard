@@ -8,14 +8,16 @@ export async function getReport(name, params = {}, signal) {
     });
   } catch (error) {
     if (error.name === "AbortError") throw error;
-    throw new Error("Cannot reach the local server. Is start.cmd running?");
+    throw new Error(
+      "Can't reach the dashboard right now. Check your connection and refresh.",
+    );
   }
   let result;
   try {
     result = await response.json();
   } catch (error) {
     if (error.name === "AbortError") throw error;
-    throw new Error("The server sent an unreadable reply. Restart start.cmd.");
+    throw new Error("Something went wrong loading this. Refresh to try again.");
   }
   if (!response.ok)
     throw new Error(result.error || "Could not load. Refresh to retry.");
