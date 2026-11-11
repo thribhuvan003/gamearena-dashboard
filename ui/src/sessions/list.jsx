@@ -1,11 +1,10 @@
 // A card's session list (the drawer): how far those sessions got, then one row per session
 // with its outcome and main error, with sorting, search and paging. A row opens the pop-up.
 import React, { useEffect, useRef, useState } from "react";
-import { Info, Pages, number, utcTime } from "./format";
-import { readUrl, writeUrl } from "./url";
-import { SessionDetail } from "./sessions";
-import { RankedBars, reasonColour } from "./charts";
-import { useCopy } from "./share";
+import { Info, Pages, number, useCopy, utcTime } from "../lib/format";
+import { readUrl, writeUrl } from "../lib/helpers";
+import { SessionDetail } from "./popup";
+import { RankedBars, reasonColour } from "../overview/charts";
 
 // The cards about stream quality. Their lists show stream numbers instead of how far each
 // session got, and leave out the "How far these sessions got" chart. Connection lists need it.

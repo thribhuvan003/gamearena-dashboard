@@ -23,7 +23,7 @@ The files worth reading, in order:
 5. `api/sql/impact.sql`: every number on the main page, read from those tables.
 6. `api/impact.py`: the main page's API: filters, comparison window, one batch of queries.
    `/api/impact/?only=list` (with a `category`) returns only that card's session list, for paging and sorting it.
-7. `ui/src/impact.jsx`: the main page. `affected.jsx` is a card's session list, `sessions.jsx` the session pop-up.
+7. `ui/src/overview/page.jsx`: the main page. `ui/src/sessions/list.jsx` is a card's session list, `sessions/popup.jsx` the session pop-up.
 8. `checks/verify_numbers.py`: recounts every number from raw telemetry with separate SQL.
 
 Everything else is plumbing: settings, the scripts below, tests and styles.
@@ -75,7 +75,7 @@ shows exactly what the app sent. If the rules change, the next pipeline run reta
 
 | Folder | Contents |
 |---|---|
-| `ui/` | React + Vite. `npm run build` writes `ui/dist`, which Django serves. `src/impact.jsx` is the main page, `affected.jsx` a card's session list, `sessions.jsx` the session pop-up, `charts.jsx` every chart (outcome bar, ranked bars, trend lines) and their colours, `noise.js` the rule for which changes are flagged, `share.jsx` copying links and IDs, `url.js` keeping the page's choices in the address bar |
+| `ui/` | React + Vite. `npm run build` writes `ui/dist`, which Django serves. `src/main.jsx` starts the page (dates, header). `src/overview/` is the main page: `page.jsx` (state, address bar, loading), `filters.jsx`, `cards.jsx`, `charts.jsx`, `errors-table.jsx`, `compare.js`. `src/sessions/` is a card's session list (`list.jsx`) and the session pop-up (`popup.jsx`, `popup-summary.jsx`, `popup-tabs.jsx`, `words.js`). `src/lib/` holds shared helpers: `api.js` (loading reports), `format.jsx` (numbers, info button, pager, copy), `helpers.js` (address bar, date checks, the noise rule for which changes are flagged) and their tests. `src/styles/` holds the CSS |
 | `api/` | Django settings, URLs and views (`impact.py` main page, `sessions.py` session pop-up, `views.py` dates and the page itself). `sql/` holds the queries the API runs. Read-only connection |
 | `pipeline/` | `rules.py` decides every tag, card and reason; `job.py` is the batch job (`python -m pipeline`). `sql/job.sql` is what it reads and writes, `sql/schema.sql` its tables |
 | `shared/` | `db.py` is the only code that connects to the database; it loads every `-- report: name` query from `api/sql/` and `pipeline/sql/`. `dates.py` checks dates and pages |
@@ -93,7 +93,7 @@ shows exactly what the app sent. If the rules change, the next pipeline run reta
 4. If it needs a fact the pipeline does not collect yet: count it in `pipeline/sql/job.sql`, add a column to
    `pipeline/sql/schema.sql` (and to `process_save_session`) and, if it is added up across days, to `COUNTS`.
 5. Run `scripts\process.cmd`. Every session gets the new tag, and it appears in the filter list.
-6. Show it as a card in `ui/src/impact.jsx` if needed.
+6. Show it as a card in `ui/src/overview/cards.jsx` if needed.
 
 `tests/test_impact.py` fails when a card is missing from `groups()`, `SECTIONS`/`NOT_FILTERS` or sits in two share bases.
 
@@ -122,7 +122,7 @@ shows exactly what the app sent. If the rules change, the next pipeline run reta
   waiting for the team to confirm it.
 - Comparisons: up to 6 days are compared with the same days a week earlier; 7 days or more
   with the same number of days just before.
-- A change is only flagged when it is bigger than everyday noise (`ui/src/noise.js`): shares
+- A change is only flagged when it is bigger than everyday noise (`ui/src/lib/helpers.js`): shares
   need a 99% two-proportion test and at least 100 sessions on each side, counts must move by more
   than their normal spread (about the square root of the count), daily numbers are judged
   against their own day-to-day spread over the last four weeks, and network numbers need a change

@@ -1,6 +1,6 @@
 // Plain helpers the main page shares: how numbers and dates are written, how a change is put
 // in words, and how the error picked in the error table is kept and shown.
-import { dateLabel, number } from "./format";
+import { dateLabel, number } from "../lib/format";
 
 // How each kind of number is written, one decimal each.
 export const percent = (value) => number(value, 1) + "%";

@@ -1,7 +1,7 @@
 // The filter panel and the "Showing only:" chips: every tag and reason with its count, and
 // one chip per filter in use so each can be removed in a click. Picks go up through onChange.
 import React, { useEffect, useId, useRef, useState } from "react";
-import { Info, number } from "./format";
+import { Info, number } from "../lib/format";
 import { errorText } from "./compare";
 
 // An open filter section shows its biggest six until "+ N more" is clicked. Fewer than six

@@ -1,7 +1,7 @@
 // The error table: every error event exactly as sent, with how many sessions had it.
 // Clicking a row's event or count picks that error and lists its sessions.
 import React from "react";
-import { Info, number, plural } from "./format";
+import { Info, number, plural } from "../lib/format";
 
 // The error table's columns: [heading, what it means, class].
 const ERROR_COLUMNS = [

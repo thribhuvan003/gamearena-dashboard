@@ -7,13 +7,11 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { getReport } from "./api";
-import { DailyImpact } from "./impact";
-import { Notice, dateLabel, utcTime } from "./format";
-import { readUrl, writeUrl } from "./url";
-import { CopyLinkButton } from "./share";
-import { realDay, usableDay } from "./choices";
-import "./style.css";
+import { getReport } from "./lib/api";
+import { DailyImpact } from "./overview/page";
+import { CopyLinkButton, Notice, dateLabel, utcTime } from "./lib/format";
+import { readUrl, realDay, usableDay, writeUrl } from "./lib/helpers";
+import "./styles/style.css";
 
 // A date some days before or after another, as YYYY-MM-DD.
 function shift(day, days) {

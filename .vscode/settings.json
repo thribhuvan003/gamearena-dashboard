@@ -25,8 +25,8 @@
     "ui/package.json": true,
     "ui/package-lock.json": true,
     "ui/vite.config.js": true,
-    "ui/src/*.css": true,
-    "ui/src/*.test.js": true
+    "ui/src/styles": true,
+    "ui/src/lib/*.test.js": true
   },
   "explorer.compactFolders": false,
   "terminal.integrated.defaultProfile.windows": "Command Prompt",

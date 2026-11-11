@@ -1,14 +1,23 @@
 // The session pop-up: the errors in the session, its numbers, the event timeline and stream
 // quality. Raw event names and payloads sit behind the Technical details switch.
 import React, { useEffect, useRef, useState } from "react";
-import { useReport } from "./api";
-import { Notice, Pages, clickedOutside, number, utcTime } from "./format";
-import { EventFilters, EventTable } from "./session-events";
-import { StreamQuality } from "./session-quality";
-import { SessionSummary } from "./session-summary";
-import { DataTable } from "./session-table";
-import { CONNECTION_NOTES, ROLES, WHO_SENT, plain } from "./session-words";
-import { useCopy } from "./share";
+import { useReport } from "../lib/api";
+import {
+  Notice,
+  Pages,
+  clickedOutside,
+  number,
+  useCopy,
+  utcTime,
+} from "../lib/format";
+import {
+  DataTable,
+  EventFilters,
+  EventTable,
+  StreamQuality,
+} from "./popup-tabs";
+import { SessionSummary } from "./popup-summary";
+import { CONNECTION_NOTES, ROLES, WHO_SENT, plain } from "./words";
 
 // Where this browser remembers whether Technical details is on.
 const TECHNICAL_KEY = "gamearena.technical";

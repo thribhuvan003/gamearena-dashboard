@@ -1,6 +1,6 @@
 // The plain words the session pop-up uses: names for measurements, events, senders, levels and
 // endings, and what each table column means. Kept together so every part says them the same way.
-import { utcTime } from "./format";
+import { utcTime } from "../lib/format";
 
 // Every measurement the player app sends: [name with the app's field name, unit, what it is].
 // The names match the main page's cards. Checked in the data: readings are 1,000 ms apart,
