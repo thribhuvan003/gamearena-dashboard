@@ -439,6 +439,28 @@ class ImpactApiTests(unittest.TestCase):
         self.assertTrue(response.json()["error"].startswith("Search:"))
         batch.assert_not_called()
 
+    def test_a_list_only_request_runs_just_the_lists_two_reports(self, batch):
+        # Paging or sorting an open card asks again for its list alone, with exactly the queries
+        # the full request would have run for it, and answers with nothing but the list.
+        listed = [{"session_id": "a", "fps_mean": 20, "why": "Connected"}]
+        batch.return_value = stored(listed=listed)
+        picked = {"category": "low_fps", "page": "3", "sort": "wait", "order": "asc", "search": "ab",
+                  "filters": "owner", "error_event": "ice.candidate.error"}
+        full, full_queries = asked(batch, **picked)
+        response, queries = asked(batch, only="list", **picked)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(queries, {key: full_queries[key] for key in ("list", "list_reasons")})
+        self.assertEqual(response.json(), {"sessions": full.json()["sessions"]})
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+    def test_a_list_only_request_needs_a_card_and_a_known_part(self, batch):
+        # A list-only request with no open card, an unknown part or a page past the limit is a broken link.
+        for bad in ({"only": "list"}, {"only": "summary", "category": "all"},
+                    {"only": "list", "category": "all", "page": "401"}):
+            with self.subTest(bad):
+                self.assertEqual(asked(batch, **bad)[0].status_code, 400)
+        batch.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

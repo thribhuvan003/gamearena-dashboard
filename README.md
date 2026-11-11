@@ -22,6 +22,7 @@ The files worth reading, in order:
 4. `pipeline/sql/schema.sql`: the tables the job writes.
 5. `api/sql/impact.sql`: every number on the main page, read from those tables.
 6. `api/impact.py`: the main page's API: filters, comparison window, one batch of queries.
+   `/api/impact/?only=list` (with a `category`) returns only that card's session list, for paging and sorting it.
 7. `ui/src/impact.jsx`: the main page. `affected.jsx` is a card's session list, `sessions.jsx` the session pop-up.
 8. `checks/verify_numbers.py`: recounts every number from raw telemetry with separate SQL.
 

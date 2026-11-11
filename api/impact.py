@@ -1,6 +1,6 @@
 """The main page's API (/api/impact/). Reads the chosen dates and filters, runs every
 main-page query from api/sql/impact.sql in one batch, and returns the cards, charts,
-filters, error table and the open card's session list."""
+filters, error table and the open card's session list. With only=list it returns just that list."""
 from datetime import timedelta
 
 import psycopg
@@ -129,6 +129,11 @@ def impact(request):
         page = page_number(request.GET.get("page", "1"))
         if page > MAX_PAGES:
             raise ValueError("Page too far")
+        # only=list answers with just the open card's list, for opening, paging or sorting it: the
+        # rest of the page is already on screen, so 2 reports run instead of 11. It needs an open card.
+        only = request.GET.get("only", "")
+        if only not in ("", "list") or (only and not category):
+            raise ValueError("Unknown part")
 
         # The filters every query gets; each period adds its own dates.
         shared = {"filters": filters, "reason": reason, **error}
@@ -156,16 +161,22 @@ def impact(request):
             requests["list"] = ("impact_list", {**listing, "limit": PAGE_SIZE, "offset": (page - 1) * PAGE_SIZE,
                                                 "sort": sort, "descending": request.GET.get("order") != "asc"})
             requests["list_reasons"] = ("impact_reasons", listing)
+        if only:
+            # The list's two reports, exactly as the full request runs them, and nothing else.
+            requests = {key: requests[key] for key in ("list", "list_reasons")}
         rows = db.batch(requests)
 
-        previous = period(rows["before_tags"], rows["before_totals"], rows["before_measures"])
-        data = {"summary": period(rows["tags"], rows["totals"], rows["measures"]),
-                # No earlier sessions means no change to show, rather than a jump from zero.
-                "previous": previous if previous["sessions"] else None,
-                "facets": facets(counts(rows["tags"]), rows["reasons"]),
-                "titles": {key: title for key, (title, _) in DEFINITIONS.items()},
-                "error_events": rows["error_events"],
-                "trend": trend(rows["trend"], trend_start, window["end"])}
+        if only:
+            data = {}
+        else:
+            previous = period(rows["before_tags"], rows["before_totals"], rows["before_measures"])
+            data = {"summary": period(rows["tags"], rows["totals"], rows["measures"]),
+                    # No earlier sessions means no change to show, rather than a jump from zero.
+                    "previous": previous if previous["sessions"] else None,
+                    "facets": facets(counts(rows["tags"]), rows["reasons"]),
+                    "titles": {key: title for key, (title, _) in DEFINITIONS.items()},
+                    "error_events": rows["error_events"],
+                    "trend": trend(rows["trend"], trend_start, window["end"])}
         if category:
             reasons = [[row["reason"], row["sessions"]] for row in rows["list_reasons"]]
             # The list's total is the sum of its reasons, so the two always agree without another count.

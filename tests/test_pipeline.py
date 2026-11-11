@@ -1,7 +1,8 @@
 """Tests for the batch job: what one batch saves, the rules version, retries, the
 --every loop, the run lock and the guards against bad rows and stuck queries."""
+import io
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock, call, patch
 
 from helpers import SESSION_ID, START
@@ -177,6 +178,60 @@ class LockTests(unittest.TestCase):
         result, reads, _, fresh = self.run_job(broken=True)
         self.assertIsInstance(result, job.psycopg.OperationalError)
         fresh.execute.assert_called_once_with(QUERIES["process_unlock"], {"token": reads["process_lock"]["token"]})
+
+
+# A run when nothing new has arrived: it must stop at once instead of retagging the last day again.
+class IdleTests(unittest.TestCase):
+    MARKS = {"events_until": START, "stats_until": START}
+
+    def run_job(self, marks=None, done_version="v1", full=False):
+        # One run with an empty queue and the last finished run saved at MARKS. Returns run()'s result,
+        # the statements it executed and what it printed.
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        state = {"sessions": {**self.MARKS, "rules_version": done_version},
+                 "pending": {**self.MARKS, "rules_version": "v1"}}
+        replies = {"process_lock": [{"name": "sessions"}], "process_next": [],
+                   "process_marks": [marks or self.MARKS]}
+
+        def fake_read(_, name, params=None):
+            return [state[params["name"]]] if name == "process_state" else replies[name]
+
+        with patch("shared.db.connect", return_value=connection), \
+                patch("pipeline.job.create_tables"), patch("pipeline.job.VERSION", "v1"), \
+                patch("pipeline.job.read", side_effect=fake_read), \
+                patch("pipeline.job.process_batch") as process_batch, \
+                patch("sys.stdout", new_callable=io.StringIO) as out:
+            result = job.run(full, job.BATCH)
+        process_batch.assert_not_called()
+        return result, [c.args[0] for c in connection.execute.call_args_list], out.getvalue()
+
+    def test_a_run_with_nothing_new_queues_and_saves_nothing(self):
+        # Same marks, same rules, empty queue: no sessions queued, no state saved, the lock still freed.
+        result, statements, printed = self.run_job()
+        self.assertTrue(result)
+        self.assertNotIn(QUERIES["process_queue_changed"], statements)
+        self.assertNotIn(QUERIES["process_save_state"], statements)
+        self.assertEqual(statements[-1], QUERIES["process_unlock"])
+        self.assertIn("Nothing new", printed)
+
+    def test_new_data_new_rules_or_full_still_fill_the_queue(self):
+        moved = {**self.MARKS, "stats_until": START + timedelta(minutes=1)}
+        for name, kwargs in (("new data", {"marks": moved}), ("new rules", {"done_version": "v0"}),
+                             ("--full", {"full": True})):
+            with self.subTest(name):
+                result, statements, printed = self.run_job(**kwargs)
+                self.assertTrue(result)
+                self.assertIn(QUERIES["process_queue_changed"], statements)
+                self.assertNotIn("Nothing new", printed)
+
+    def test_sessions_left_in_the_queue_are_never_skipped(self):
+        # Even with nothing new, a queue that still holds sessions is filled and worked through.
+        connection = MagicMock()
+        replies = {"process_marks": [self.MARKS], "process_state": [{**self.MARKS, "rules_version": "v1"}]}
+        with patch("pipeline.job.read", side_effect=lambda _, name, params=None: replies[name]):
+            self.assertTrue(job.fill_queue(connection, False, "v1", queued=True))
+        self.assertIn(QUERIES["process_queue_changed"], [c.args[0] for c in connection.execute.call_args_list])
 
 
 # The SQL and connection settings that keep one bad row or one stuck query from stopping the job.

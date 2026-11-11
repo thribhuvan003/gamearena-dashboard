@@ -115,13 +115,19 @@ def with_retries(work, attempts=5):
             time.sleep(0.5 * (attempt + 1))
 
 
-def fill_queue(connection, full, version):
+def fill_queue(connection, full, version, queued=False):
     # Where the data ends now. It becomes the saved point only when the queue is empty,
     # so a run that stops early carries on from the same point next time.
+    # Returns False, queuing nothing, when there is nothing to do.
     marks = read(connection, "process_marks")[0]
     done = next(iter(read(connection, "process_state", {"name": "sessions"})), None)
     if done and done["rules_version"] != version:
         full = True  # The rules changed, so every session is retagged.
+    # Nothing saved since the last finished run, same rules, nothing left in the queue: there is
+    # nothing new to tag. Without this, every run would retag the last day's sessions again, since
+    # the events look-back is measured from a mark that only moves when new events arrive.
+    if not full and not queued and done and all(marks[key] == done[key] for key in ("events_until", "stats_until")):
+        return False
     # Each table resumes a little before its saved point (see the lookbacks above). With --full or no
     # saved point these are empty, and the queue is filled from EPOCH.
     events_from = not full and done and done["events_until"] and done["events_until"] - EVENTS_LOOKBACK
@@ -131,6 +137,7 @@ def fill_queue(connection, full, version):
         "stats_since": stats_from or EPOCH, "stats_until": marks["stats_until"] or EPOCH})
     # Saved as "pending" until the queue is empty; run() then copies it to "sessions".
     connection.execute(db.QUERIES["process_save_state"], {"name": "pending", **marks, "rules_version": version})
+    return True
 
 
 def unlock(connection, token):
@@ -166,8 +173,11 @@ def run(full, batch):
             if full:
                 connection.execute(db.QUERIES["process_queue_clear"])
             # An empty queue starts a new run; otherwise the last run stopped early and carries on.
-            if full or not read(connection, "process_next", {"batch": 1}) or not pending:
-                fill_queue(connection, full, version)
+            queued = bool(read(connection, "process_next", {"batch": 1}))
+            if (full or not queued or not pending) and not fill_queue(connection, full, version, queued):
+                # Nothing new: the lock is still freed below, and the saved point stays as it is.
+                print("Nothing new since the last run.")
+                return True
             # Take the next batch from the queue until it is empty.
             while ids := [str(row["session_id"]) for row in read(connection, "process_next", {"batch": batch})]:
                 tagged += with_retries(lambda: process_batch(connection, ids, version))
