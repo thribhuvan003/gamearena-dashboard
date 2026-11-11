@@ -41,10 +41,13 @@ export function Card({
         (onOpen ? " clickable" : "")
       }
     >
+      {/* The "i" sits after the heading, not beside it in the same row, so its explanation
+          opens below the heading at the card's full width instead of squeezing the title.
+          The button itself is drawn in the heading's top corner (see .compact-metric > .info). */}
       <div className="card-head">
         <h3>{title}</h3>
-        {hint && <Info topic={title}>{hint}</Info>}
       </div>
+      {hint && <Info topic={title}>{hint}</Info>}
       {/* Only a card with sessions behind it makes its number a button. */}
       {onOpen ? (
         <button

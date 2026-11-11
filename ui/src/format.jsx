@@ -1,6 +1,6 @@
 // Small pieces every screen uses: number and time formatting, the "i" explanation button,
 // notices, paging, and closing a pop-up when clicking outside it.
-import React, { useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 
 // A number grouped the Indian way (12,34,567) with at most `digits` decimals.
 // A missing value shows as a dash, so a gap never reads as zero.
@@ -41,8 +41,21 @@ export function utcTime(value, withSeconds = false) {
 }
 
 // A small round "i" button. Clicking it shows what a number means and how it is worked out.
+// Esc closes it again; inside the drawer or a pop-up, that Esc closes only the explanation.
 export function Info({ children, topic }) {
   const [open, setOpen] = useState(false);
+  // Ties the button to the explanation it shows, for screen readers.
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    function close(event) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+    }
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [open]);
   return (
     <span className="info">
       <button
@@ -50,6 +63,7 @@ export function Info({ children, topic }) {
         className="info-button"
         aria-label={topic ? `What is "${topic}"?` : "What does this mean?"}
         aria-expanded={open}
+        aria-controls={open ? id : undefined}
         onClick={(event) => {
           // An "i" can sit inside something that reacts to clicks itself; the click
           // stops here so it only opens the explanation.
@@ -60,7 +74,7 @@ export function Info({ children, topic }) {
         i
       </button>
       {open && (
-        <span className="info-text" role="note">
+        <span className="info-text" role="note" id={id}>
           {children}
         </span>
       )}

@@ -399,18 +399,42 @@ details[open] > summary::before {
   max-height: calc(100vh - 32px);
   overflow: auto;
   margin: 0;
-  padding: 16px 12px;
+  padding: 16px;
+}
+/* The title with "Clear" at the far right, on the same line. */
+.filters-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .filters-title {
-  margin: 0 4px 12px;
   font-size: 15px;
+}
+.filters-clear {
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.filters-clear:hover {
+  color: var(--link);
 }
 .filters input[type="search"] {
   width: 100%;
   min-height: 36px;
   padding: 4px 12px;
-  border-color: var(--line-strong);
-  font-size: 15px;
+  font-size: 13px;
+}
+/* Shown only when a search finds nothing; otherwise it is read out but not seen. */
+.facet-status {
+  margin: 12px 8px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.facet-status:empty {
+  display: none;
 }
 /* Wide screens: the wrapper is invisible, so the panel still sticks beside the page.
    Narrow screens fold it behind the Filters button (see the 1000px rules). */
@@ -420,103 +444,151 @@ details[open] > summary::before {
 .filters-toggle {
   display: none;
 }
-/* Section headings are quiet labels; the rows carry the weight. */
+/* Every row in the panel is 32px tall, with a 16px first column (the chevron on a heading,
+   the box on a row), so section names, row names and "+ N more" all start on one line. */
+.facet-section {
+  margin-top: 12px;
+}
 .facet-section h3 {
-  margin: 16px 4px 4px;
-  color: var(--text-soft);
+  font-size: 13px;
+}
+.facet-head,
+.facet-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
   font-size: 13px;
   font-weight: 600;
+  text-align: left;
+}
+.facet-head:hover,
+.facet-toggle:hover {
+  background: var(--hover);
+}
+/* A small chevron: pointing right when folded, down when open. */
+.chevron {
+  display: grid;
+  place-items: center;
+  flex: 0 0 16px;
+  height: 16px;
+}
+.chevron::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: -2px;
+  border-right: 1.5px solid var(--text-soft);
+  border-bottom: 1.5px solid var(--text-soft);
+  transform: rotate(-45deg);
+  transition: transform var(--fast) var(--ease);
+}
+[aria-expanded="true"] > .chevron::before {
+  margin: -3px 0 0;
+  transform: rotate(45deg);
 }
 .facet-list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
-/* Every row is one 28px line at 13px, so long event names fit beside their count. A thin bar
-   along the bottom shows the count compared with the largest in the section (--share, set on
-   each button). The count sits in its own fixed column, so the numbers line up. */
-.facet-list button {
+/* One row: the box, the name (cut short with "…" if it does not fit) and the count, right
+   aligned in its own column so the numbers line up. */
+.facet-option {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 28px;
-  padding: 2px 4px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--text);
-  background-color: transparent;
-  background-image: linear-gradient(var(--line-strong), var(--line-strong));
-  background-repeat: no-repeat;
-  background-position: 4px calc(100% - 1px);
-  background-size: calc((100% - 8px) * var(--share, 0)) 2px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
   font-size: 13px;
-  line-height: 1.4;
-  text-align: left;
+  cursor: pointer;
 }
-.facet-list button:hover {
-  background-color: var(--hover);
+.facet-option:hover {
+  background: var(--hover);
 }
-.facet-list button[aria-pressed="true"],
-.facet-list button[aria-pressed="true"]:hover {
-  color: var(--accent-dark);
-  background-color: var(--selected);
-  font-weight: 600;
+/* The keyboard ring goes round the whole row, not just the small box. */
+.facet-option:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: -1px;
 }
-.facet-list .count {
-  color: var(--text-muted);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
+/* The browser's own checkbox is redrawn as a plain box, filled with the accent and a white
+   tick when picked. It stays a real checkbox for the keyboard and screen readers. */
+.facet-option input {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--control-line);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    background-color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+.facet-option input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.facet-option input:checked::before {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border-right: 2px solid white;
+  border-bottom: 2px solid white;
+  transform: rotate(45deg);
+}
+.facet-option input:focus-visible {
+  outline: none;
 }
 .facet-label {
-  display: flex;
-  gap: 4px;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-/* "Show N more" and "More filters": plain link-coloured buttons with a chevron that turns
-   when open. */
-.facet-more,
-.facet-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 2px 4px;
+.facet-option .count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* "+ N more" and "Show less": a plain link under the names it adds to. */
+.facet-more {
+  min-height: 32px;
+  padding: 0 8px 0 32px;
   border: 0;
   color: var(--link);
   background: transparent;
   font-size: 13px;
 }
-.facet-more:hover,
-.facet-toggle:hover {
+.facet-more:hover {
   background: transparent;
   text-decoration: underline;
 }
-.facet-more::after,
-.facet-toggle::after {
-  content: "›" / "";
-  display: inline-block;
-  font-size: 17px;
-  line-height: 1;
-  transform: rotate(90deg);
-  transition: transform var(--fast) var(--ease);
-}
-.facet-more[aria-expanded="true"]::after,
-.facet-toggle[aria-expanded="true"]::after {
-  transform: rotate(-90deg);
-}
 /* "More filters" sits under a faint line, apart from the three open sections. */
 .facet-toggle {
-  width: 100%;
-  margin-top: 16px;
-  padding-top: 12px;
+  position: relative;
+  margin-top: 25px;
+}
+.facet-toggle::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  right: 0;
+  left: 0;
   border-top: 1px solid var(--line);
-  border-radius: 0;
-  font-weight: 600;
 }
 /* How many picks are folded inside, so a hidden pick is never missed. */
 .facet-active {
@@ -525,14 +597,7 @@ details[open] > summary::before {
   color: var(--accent-dark);
   background: var(--accent-tint);
   font-weight: 400;
-}
-/* The tick beside a chosen filter takes no room when the filter is not chosen. */
-.tick {
-  flex: 0 0 1em;
-  color: var(--accent);
-}
-.tick:empty {
-  display: none;
+  line-height: 20px;
 }
 /* The filters in use, as chips above the numbers; each chip removes its filter. */
 .active-filters {
@@ -635,6 +700,28 @@ details[open] > summary::before {
   align-items: center;
   gap: 8px;
   margin-bottom: 4px;
+  /* Room for the "i" in the corner, so a long title wraps before reaching it. */
+  padding-right: 28px;
+}
+/* A card's "i" comes after its heading: the button is drawn in the heading's top-right corner,
+   and the explanation opens under the heading at the card's full width, so the title keeps
+   its line instead of being squeezed beside it. Both stay above the card's click area. */
+.compact-metric > .info {
+  position: static;
+  display: block;
+}
+.compact-metric > .info .info-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  margin: 0;
+}
+.compact-metric > .info .info-text {
+  position: relative;
+  z-index: 1;
+  max-width: none;
+  margin: 4px 0 8px;
 }
 .compact-metric h3 {
   color: var(--text-muted);
@@ -972,6 +1059,9 @@ td summary {
   border-left: 1px solid var(--line);
   background: #f8faf6;
   overflow: auto;
+  /* Whatever the drawer scrolls into view (a new page's list, a row reached with Tab) stops
+     below Close rather than under it. */
+  scroll-padding-top: 72px;
 }
 /* The page behind the drawer or pop-up dims, so it is clear it cannot be used until they close. */
 .drawer::backdrop,
@@ -1243,7 +1333,8 @@ td summary {
 
 /* Touch screens: the compact controls grow to at least 44px, a comfortable size for a finger. */
 @media (pointer: coarse) {
-  .facet-list button,
+  .facet-option,
+  .facet-head,
   .facet-more,
   .facet-toggle,
   .filters input[type="search"],
@@ -1295,9 +1386,33 @@ td summary {
   .compact-metric {
     min-height: 0;
   }
+  /* 100%, not 100vw: 100vw counts the page's scrollbar too, which pushed the drawer's left
+     edge off screen and left its content about 2px from the edge. */
   .drawer {
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
     padding: 0 16px 16px;
+  }
+  /* No room beside the title on a phone, so Close gets a band of its own across the top. The
+     band stays put while the list scrolls under it, so Close never sits on a row's text or
+     buttons, and the title starts below it. */
+  .drawer::before {
+    content: "";
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: block;
+    height: 64px;
+    margin: 0 -16px;
+    border-bottom: 1px solid var(--line);
+    background: #f8faf6;
+  }
+  .drawer > .close-button {
+    top: 10px;
+    margin: -54px 0 24px auto;
+  }
+  .drawer > article > .panel-title {
+    padding: 0;
   }
   .session-detail {
     width: 100vw;

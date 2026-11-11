@@ -1,6 +1,6 @@
 // A card's session list (the drawer): how far those sessions got, then one row per session
 // with its outcome and main error, with sorting, search and paging. A row opens the pop-up.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Info, Pages, number, utcTime } from "./format";
 import { readUrl, writeUrl } from "./url";
 import { SessionDetail } from "./sessions";
@@ -74,6 +74,23 @@ const SORTS = {
   "Time with many skipped frames": "skipped",
   "Time to video": "wait",
 };
+
+// The chosen sort in words, e.g. "Sorted by Started, newest first.", or "" with none chosen.
+// Started is a time, so it reads newest and oldest; the rest are amounts, highest and lowest.
+function sortWords(sort) {
+  const label = Object.keys(SORTS).find((name) => SORTS[name] === sort.key);
+  if (!label) return "";
+  const desc = sort.order === "desc";
+  const first =
+    label === "Started"
+      ? desc
+        ? "newest first"
+        : "oldest first"
+      : desc
+        ? "highest first"
+        : "lowest first";
+  return `Sorted by ${label}, ${first}.`;
+}
 
 // The session's main error as the telemetry has it: event, code, stage, phase, then its text.
 function mainError(row) {
@@ -171,6 +188,17 @@ export function AffectedSessions({
   // The search box follows the search in use, so Back or a new card clears it too.
   const [find, setFind] = useState(search);
   useEffect(() => setFind(search), [search]);
+  // The list's toolbar and table, so a new page can bring them back into view.
+  const toolbar = useRef(null);
+  const table = useRef(null);
+  // Previous and Next are switched off while the page loads, which would drop focus to the
+  // page itself, and the new rows start at the top while the drawer stayed scrolled down. So
+  // the list scrolls back to its top and focus moves to the table: Tab then reaches the rows.
+  function turnPage(next) {
+    onPage(next);
+    toolbar.current.scrollIntoView({ block: "start" });
+    table.current.focus({ preventScroll: true });
+  }
   // A column that is empty on every row of this page is left out; it would only show dashes.
   const columns = columnsFor(category, errorView).filter(
     (label) =>
@@ -193,7 +221,7 @@ export function AffectedSessions({
         <p className="scope">From the &quot;{from}&quot; card.</p>
       )}
       <p className="scope">
-        Sessions active on {scope} (UTC). Each row covers the whole session.
+        Sessions active on {scope}. Each row covers the whole session.
       </p>
 
       {/* Where these sessions stopped, over the whole list, not just this page.
@@ -217,13 +245,9 @@ export function AffectedSessions({
       )}
 
       {/* Above the table: how the list is ordered, and a search by session ID. */}
-      <div className="list-toolbar">
+      <div className="list-toolbar" ref={toolbar}>
         {/* The chosen sort in words, or the server's own default order when none is chosen. */}
-        <p>
-          {sort.key
-            ? `Sorted by ${Object.keys(SORTS).find((label) => SORTS[label] === sort.key)}, ${sort.order === "desc" ? "highest first" : "lowest first"}.`
-            : sessions.order + "."}
-        </p>
+        <p>{sortWords(sort) || sessions.order + "."}</p>
         <form
           className="search-form"
           role="search"
@@ -238,6 +262,15 @@ export function AffectedSessions({
             maxLength={36}
             value={find}
             onChange={(event) => setFind(event.target.value)}
+            // Esc empties the box and drops the search in use too, so the whole list is back.
+            // It stops there rather than also closing the drawer; with nothing to clear, Esc
+            // closes the drawer as usual.
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || (!find && !search)) return;
+              event.preventDefault();
+              setFind("");
+              if (search) onSearch("");
+            }}
             aria-label="Find a session by its ID"
             placeholder="Find a session ID"
           />
@@ -245,7 +278,7 @@ export function AffectedSessions({
         </form>
       </div>
       <div className="table-scroll">
-        <table aria-label={group.title}>
+        <table aria-label={group.title} ref={table} tabIndex={-1}>
           <thead>
             <tr>
               {["Session ID", ...columns].map((label) => {
@@ -375,7 +408,7 @@ export function AffectedSessions({
       <Pages
         data={sessions}
         page={page}
-        onChange={onPage}
+        onChange={turnPage}
         busy={busy}
         noun="session"
       />

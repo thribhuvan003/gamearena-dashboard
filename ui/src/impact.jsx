@@ -2,11 +2,12 @@
 // detail sections, the error table, the filter panel, and the drawer with a card's sessions.
 // This file keeps what the page shows in step with the address bar and loads the numbers;
 // each part it draws lives in its own file.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useReport } from "./api";
 import { AffectedSessions } from "./affected";
 import { Notice } from "./format";
 import { readUrl, writeUrl } from "./url";
+import { listKey } from "./choices";
 import {
   datesText,
   errorFrom,
@@ -69,9 +70,20 @@ export function DailyImpact({ period, revision, dataStart }) {
       ...(category ? {} : { session: "" }),
     });
   }, [category, filters, reason, error]);
+  // Which list is open, in the address bar's terms, so Back can tell whether it changed.
+  const openList = useRef("");
+  openList.current = listKey({
+    card: category,
+    filters: filters.join(","),
+    reason,
+    ...errorParams(error),
+  });
   useEffect(() => {
     function follow() {
       const url = readUrl();
+      // A step that only opened or closed a session pop-up leaves the list as it was, on the
+      // same page with the same search and sort. New dates start the list afresh on their own.
+      if (listKey(url) === openList.current) return;
       setCategory(url.card || null);
       setFilters(url.filters ? url.filters.split(",") : []);
       setReason(url.reason || "");
@@ -84,19 +96,16 @@ export function DailyImpact({ period, revision, dataStart }) {
     return () => window.removeEventListener("popstate", follow);
   }, []);
 
-  // One request returns the cards, plus the session list once a card is clicked.
+  // The cards, charts and tables for the dates and filters. The open card's list is asked for
+  // on its own (below), so opening a card, paging, sorting or searching never runs the whole
+  // page's queries again.
   const result = useReport(
     "impact",
     {
       ...period,
-      ...(category ? { category } : {}),
-      page,
-      search,
       filters: filters.join(","),
       reason,
       ...errorParams(error),
-      // Sorting only matters, and is only sent, while a list is open.
-      ...(category && sort.key ? { sort: sort.key, order: sort.order } : {}),
     },
     [revision, retry],
   );
@@ -108,10 +117,8 @@ export function DailyImpact({ period, revision, dataStart }) {
   // While new numbers load, the old ones stay on screen, dimmed, instead of the page emptying.
   const [list, setList] = useState(null);
   useEffect(() => {
-    if (!result.data) return;
-    setShown({ data: result.data, period, filters, reason, error });
-    if (result.data.sessions)
-      setList({ scope: listScope, sessions: result.data.sessions });
+    if (result.data)
+      setShown({ data: result.data, period, filters, reason, error });
   }, [result.data]);
   // The numbers on screen and the choices they were counted for. The headline's dates and the
   // chips are built from these, never from choices whose numbers haven't arrived.
@@ -119,6 +126,39 @@ export function DailyImpact({ period, revision, dataStart }) {
     ? { data: result.data, period, filters, reason, error }
     : shown;
   const data = view?.data;
+  // A card the page doesn't know (an old or edited link) is never asked for.
+  const known = Boolean(category && (!data || data.summary.groups[category]));
+
+  // The open card's sessions: one page of them, and how far they all got. only=list makes the
+  // server run just those 2 queries; the rest of the page is already on screen.
+  const listResult = useReport(
+    known ? "impact" : "",
+    {
+      ...period,
+      category,
+      only: "list",
+      page,
+      search,
+      filters: filters.join(","),
+      reason,
+      ...errorParams(error),
+      ...(sort.key ? { sort: sort.key, order: sort.order } : {}),
+    },
+    [revision, retry],
+  );
+  useEffect(() => {
+    if (listResult.data)
+      setList({ scope: listScope, sessions: listResult.data.sessions });
+  }, [listResult.data]);
+
+  // An unknown card is dropped from the address bar instead of breaking the page. The address
+  // is replaced, not added to, so Back doesn't return to the broken link.
+  useEffect(() => {
+    if (category && data && !data.summary.groups[category]) {
+      writeUrl({ card: "", session: "" }, true);
+      setCategory(null);
+    }
+  }, [category, data]);
 
   // Opens a group's sessions in the drawer. `source` is the card title clicked, if any.
   function open(next, source = null) {
@@ -268,9 +308,10 @@ export function DailyImpact({ period, revision, dataStart }) {
                 category={category}
                 onOpen={open}
                 // A reason in the chart narrows the page to it and lists those sessions.
+                // Clicking it again only takes the reason away; no list opens for that.
                 onReason={(text) => {
                   pickReason(text);
-                  open("no_success");
+                  if (reason !== text) open("no_success");
                 }}
               />
 
@@ -286,53 +327,58 @@ export function DailyImpact({ period, revision, dataStart }) {
         </div>
       </div>
 
-      {/* The drawer opens for any known group; an unknown card in an old link is ignored. */}
+      {/* The drawer opens for any known group; an unknown card in an old link is dropped above. */}
       {category && groups[category] && (
         <Drawer
           title={groups[category].title}
           onClose={() => setCategory(null)}
         >
-          <Notice error={result.error} />
           {/* Until this list's own rows arrive, say so rather than show another card's, or
-              this card's for other dates or filters. */}
+              this card's for other dates or filters. A failed request says why instead. */}
           {list?.scope !== listScope ? (
-            <Notice loading>Loading sessions…</Notice>
+            <Notice error={listResult.error} loading>
+              Loading sessions…
+            </Notice>
           ) : (
-            <AffectedSessions
-              // A new card or new dates start the list afresh.
-              key={category + period.start + period.end}
-              category={category}
-              reason={reason}
-              onReason={pickReason}
-              group={groups[category]}
-              sessions={list.sessions}
-              busy={Boolean(result.loading)}
-              sort={sort}
-              // A new sort or search starts again from page 1.
-              onSort={(next) => {
-                setSort(next);
-                setPage(1);
-              }}
-              // What the list is limited to, in words: the dates and every filter.
-              scope={[
-                datesText(period),
-                ...filters.map((key) => data.titles[key] || key),
-                reason,
-                error && errorText(error),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-              from={from}
-              // With an error or reason picked, the list shows error columns instead.
-              errorView={Boolean(error || reason)}
-              search={search}
-              onSearch={(text) => {
-                setSearch(text);
-                setPage(1);
-              }}
-              page={page}
-              onPage={setPage}
-            />
+            <>
+              <Notice error={listResult.error} />
+              <AffectedSessions
+                // A new card or new dates start the list afresh.
+                key={category + period.start + period.end}
+                category={category}
+                reason={reason}
+                onReason={pickReason}
+                group={groups[category]}
+                sessions={list.sessions}
+                busy={Boolean(listResult.loading)}
+                sort={sort}
+                // A new sort or search starts again from page 1.
+                onSort={(next) => {
+                  setSort(next);
+                  setPage(1);
+                }}
+                // What the list is limited to, in words: the dates (in UTC, as the database
+                // counts days) and every filter.
+                scope={[
+                  datesText(period) + " (UTC)",
+                  ...filters.map((key) => data.titles[key] || key),
+                  reason,
+                  error && errorText(error),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                from={from}
+                // With an error or reason picked, the list shows error columns instead.
+                errorView={Boolean(error || reason)}
+                search={search}
+                onSearch={(text) => {
+                  setSearch(text);
+                  setPage(1);
+                }}
+                page={page}
+                onPage={setPage}
+              />
+            </>
           )}
         </Drawer>
       )}

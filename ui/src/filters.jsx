@@ -4,7 +4,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import { Info, number } from "./format";
 import { errorText } from "./compare";
 
-// An open filter section shows its biggest six until "Show N more" is clicked. Fewer than six
+// An open filter section shows its biggest six until "+ N more" is clicked. Fewer than six
 // is too few to scan, many more makes the panel long.
 const SHOWN = 6;
 // The sections most questions start from stay open; the rest fold under "More filters".
@@ -132,11 +132,26 @@ function Filters({ facets, filters, reason, onChange }) {
     0,
   );
   // A pick inside "More filters" opens it, so the pick stays visible and unpicking it never
-  // pulls the focused button away. Searching looks through every section, folded or not.
+  // pulls the focused box away. Searching looks through every section, folded or not.
   useEffect(() => {
     if (active > 0) setMore(true);
   }, [active > 0]);
   const restShown = more || wanted ? rest : [];
+  // While searching, the number of matching rows is read out after each change, and shown
+  // when it is none, so a search that finds nothing never looks like an empty panel.
+  const found = matching.reduce((sum, s) => sum + s.items.length, 0);
+  const status = !wanted
+    ? ""
+    : found
+      ? `${found} ${found === 1 ? "filter matches" : "filters match"}`
+      : `No filters match "${find.trim()}".`;
+  // "Clear" lets go of every pick in the panel. Its link then disappears, so the focus
+  // moves to the find box instead of falling back to the top of the page.
+  const picked = filters.length > 0 || Boolean(reason);
+  function clear() {
+    onChange([], "");
+    box.current?.focus();
+  }
   const draw = (section) => (
     <FacetSection
       key={section.title}
@@ -147,14 +162,25 @@ function Filters({ facets, filters, reason, onChange }) {
   );
   return (
     <aside className="panel filters" aria-label="Filter sessions">
-      <h2 className="filters-title">
-        Filter sessions
-        <Info topic="Filter sessions">
-          Every filter, with how many sessions match it under the filters
-          already chosen. Picking more than one keeps only sessions that have
-          all of them.
-        </Info>
-      </h2>
+      <div className="filters-head">
+        <h2 className="filters-title">
+          Filter sessions
+          <Info topic="Filter sessions">
+            Every filter, with how many sessions match it under the filters
+            already chosen. Picking more than one keeps only sessions that have
+            all of them.
+          </Info>
+        </h2>
+        {picked && (
+          <button
+            type="button"
+            className="link-button filters-clear"
+            onClick={clear}
+          >
+            Clear
+          </button>
+        )}
+      </div>
       <input
         ref={box}
         type="search"
@@ -163,6 +189,13 @@ function Filters({ facets, filters, reason, onChange }) {
         value={find}
         onChange={(event) => setFind(event.target.value)}
       />
+      {/* Always in the page, so screen readers hear each new count; only "none" is seen. */}
+      <p
+        className={"facet-status" + (found ? " visually-hidden" : "")}
+        role="status"
+      >
+        {status}
+      </p>
       {main.map(draw)}
       {/* While searching every match is already shown, so there is nothing to unfold. */}
       {rest.length > 0 && !wanted && (
@@ -173,6 +206,7 @@ function Filters({ facets, filters, reason, onChange }) {
           aria-controls={moreId}
           onClick={() => setMore(!more)}
         >
+          <span className="chevron" aria-hidden="true" />
           More filters
           {active > 0 && <span className="facet-active">{active} active</span>}
         </button>
@@ -182,11 +216,13 @@ function Filters({ facets, filters, reason, onChange }) {
   );
 }
 
-// One filter section: its rows, largest first as the server sends them, each with its count
-// and a faint bar for its share of the section's largest.
+// One filter section: a heading that folds it, then one checkbox per row, largest first as
+// the server sends them, each with its count.
 function FacetSection({ title, items, searching }) {
-  // Whether "Show N more" is on.
+  // Whether the section is unfolded, and whether "+ N more" is on.
+  const [open, setOpen] = useState(true);
   const [all, setAll] = useState(false);
+  const bodyId = useId();
   const listId = useId();
   // Folded, the section shows its biggest few plus any picked row, so a pick never hides
   // and never moves. A button that would hide a single row takes that row's room, so then
@@ -195,41 +231,57 @@ function FacetSection({ title, items, searching }) {
   const hidden = items.length - top.length;
   const fold = !searching && hidden > 1;
   const visible = fold && !all ? top : items;
-  const largest = Math.max(1, ...items.map((item) => item.count));
+  // A search shows its matches even in a folded section; a folded section with picks says
+  // how many, so a pick is never out of sight without a trace.
+  const shown = open || searching;
+  const picks = items.filter((item) => item.on).length;
   return (
     <section className="facet-section">
-      <h3>{title}</h3>
-      <ul id={listId} className="facet-list">
-        {visible.map((item) => (
-          <li key={item.key}>
-            <button
-              type="button"
-              aria-pressed={item.on}
-              onClick={item.pick}
-              style={{ "--share": item.count / largest }}
-            >
-              <span className="facet-label">
-                <span className="tick" aria-hidden="true">
-                  {item.on ? "✓" : ""}
-                </span>
-                <span>{item.text}</span>
-              </span>
-              <span className="count">{number(item.count)}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {fold && (
+      <h3>
         <button
           type="button"
-          className="facet-more"
-          aria-expanded={all}
-          aria-controls={listId}
-          onClick={() => setAll(!all)}
+          className="facet-head"
+          aria-expanded={shown}
+          aria-controls={bodyId}
+          onClick={() => setOpen(!shown)}
         >
-          {all ? "Show fewer" : `Show ${hidden} more`}
+          <span className="chevron" aria-hidden="true" />
+          {title}
+          {!shown && picks > 0 && (
+            <span className="facet-active">{picks} active</span>
+          )}
         </button>
-      )}
+      </h3>
+      <div id={bodyId} hidden={!shown}>
+        <ul id={listId} className="facet-list">
+          {visible.map((item) => (
+            <li key={item.key}>
+              {/* A real checkbox inside its label: the whole row toggles it, and screen
+                  readers hear the name, the count and whether it is picked. Long names
+                  end in "…" and show in full on hover. */}
+              <label className="facet-option" title={item.text}>
+                <input type="checkbox" checked={item.on} onChange={item.pick} />
+                <span className="facet-label">{item.text}</span>
+                <span className="count">
+                  {number(item.count)}
+                  <span className="visually-hidden"> sessions</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        {fold && (
+          <button
+            type="button"
+            className="facet-more"
+            aria-expanded={all}
+            aria-controls={listId}
+            onClick={() => setAll(!all)}
+          >
+            {all ? "Show less" : `+ ${hidden} more`}
+          </button>
+        )}
+      </div>
     </section>
   );
 }
@@ -241,6 +293,12 @@ function FacetSection({ title, items, searching }) {
 // made meanwhile is kept.
 export function ActiveFilters({ shown, current, titles, sections, onChange }) {
   const { filters, reason, error } = shown;
+  // Where the focus goes once a removed chip is gone: the chip that takes its place (or the
+  // last one left), else the find box, else the narrow-screen Filters button, instead of
+  // falling back to the top of the page. The chip only goes once the new numbers arrive,
+  // so until then the focus stays on it.
+  const row = useRef(null);
+  const removed = useRef(null);
   // Each tag's section title, so a chip can say where its filter came from.
   const sectionOf = Object.fromEntries(
     sections.flatMap((section) =>
@@ -271,16 +329,37 @@ export function ActiveFilters({ shown, current, titles, sections, onChange }) {
       text: errorText(error),
       remove: () => onChange(current.filters, current.reason, null),
     });
+  const keys = chips.map((chip) => chip.key).join(" ");
+  useEffect(() => {
+    if (!removed.current || keys.split(" ").includes(removed.current.key))
+      return;
+    const left = row.current?.querySelectorAll(".chip-button") || [];
+    const search = document.querySelector(".filters input[type='search']");
+    const next =
+      left[Math.min(removed.current.index, left.length - 1)] ||
+      (search?.offsetParent ? search : null) ||
+      document.querySelector(".filters-toggle");
+    removed.current = null;
+    next?.focus();
+  }, [keys]);
   if (!chips.length) return null;
   return (
-    <div className="active-filters" role="group" aria-label="Active filters">
+    <div
+      ref={row}
+      className="active-filters"
+      role="group"
+      aria-label="Active filters"
+    >
       <strong>Showing only:</strong>
-      {chips.map((chip) => (
+      {chips.map((chip, index) => (
         <button
           type="button"
           key={chip.key}
           className="chip-button"
-          onClick={chip.remove}
+          onClick={() => {
+            removed.current = { key: chip.key, index };
+            chip.remove();
+          }}
           aria-label={`Remove filter ${chip.text}`}
         >
           {chip.text} ✕

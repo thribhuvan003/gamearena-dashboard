@@ -12,6 +12,7 @@ import { DailyImpact } from "./impact";
 import { Notice, dateLabel, utcTime } from "./format";
 import { readUrl, writeUrl } from "./url";
 import { CopyLinkButton } from "./share";
+import { realDay, usableDay } from "./choices";
 import "./style.css";
 
 // A date some days before or after another, as YYYY-MM-DD.
@@ -54,14 +55,14 @@ const PRESETS = [
 // The dates in a link, or null when it has none or they make no sense.
 function datesIn(url) {
   // A hand-edited or old link must not break the page, so anything odd is ignored.
-  const day = /^\d{4}-\d{2}-\d{2}$/;
-  // A real date reads back the same; 2026-02-30 would come back as 2026-03-02.
-  const real = (value) =>
-    day.test(value || "") &&
-    new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
-  if (!real(url.start) || !real(url.end) || url.start > url.end) return null;
+  if (!realDay(url.start) || !realDay(url.end) || url.start > url.end)
+    return null;
   return { start: url.start, end: url.end };
 }
+
+// Said once when a link's dates were ignored, so the switch to the latest day isn't a mystery.
+const BAD_LINK_DATES =
+  "The dates in this link aren't valid, so the latest day is shown.";
 
 // One line on how fresh everything is: where the data ends, and when the numbers were made.
 function Freshness({ range }) {
@@ -106,10 +107,21 @@ function App() {
   const [picked, setPicked] = useState(() => datesIn(readUrl()));
   // Which quick date button picks the dates, or "custom" for the picked ones.
   const [preset, setPreset] = useState(picked ? "custom" : "day");
-  // The date form's message; a failed request for the dates shows its own.
-  const [error, setError] = useState("");
+  // The date form's message; a failed request for the dates shows its own. A link whose dates
+  // were ignored starts with a message saying so.
+  const [error, setError] = useState(() => {
+    const url = readUrl();
+    return (url.start || url.end) && !datesIn(url) ? BAD_LINK_DATES : "";
+  });
   // The "Pick a range" boxes, kept in step with the dates shown.
   const [custom, setCustom] = useState({ start: "", end: "" });
+  // The "Pick a day" box as typed. It shows the day while one day is shown, and blank for a
+  // range, so it never looks like only one day is.
+  const [day, setDay] = useState("");
+  // The days a date box offers: those with data.
+  const limits = range?.end
+    ? { min: range.start.slice(0, 10), max: range.end.slice(0, 10) }
+    : {};
   // Whether the dates have been put in the address bar yet this visit.
   const written = useRef(false);
 
@@ -133,6 +145,7 @@ function App() {
     writeUrl({ start: period.start, end: period.end }, !written.current);
     written.current = true;
     setCustom(period);
+    setDay(period.start === period.end ? period.end : "");
   }, [period]);
   // Back or Forward to other dates shows exactly those dates, so Refresh keeps them too.
   useEffect(() => {
@@ -211,20 +224,26 @@ function App() {
                 );
               })}
           </div>
-          {/* Blank while a range is shown, so it never looks like only one day is. */}
           <label className="day-selector">
             Pick a day
             <input
               type="date"
               disabled={loading}
-              value={period && period.start === period.end ? period.end : ""}
+              {...limits}
+              value={day}
               onChange={(event) => {
-                // Clearing the box is ignored; only a real day changes the dates.
-                if (event.target.value)
-                  choose(
-                    { start: event.target.value, end: event.target.value },
-                    "custom",
-                  );
+                const value = event.target.value;
+                setDay(value);
+                // The box reports every keystroke, so a year being typed passes through 0002,
+                // 0020 and 0202. Only a whole day with data changes the dates; a cleared box
+                // or a part-typed day waits.
+                if (range?.end && usableDay(value, range))
+                  choose({ start: value, end: value }, "custom");
+              }}
+              // Left part-typed or outside the data, the box goes back to the day shown.
+              onBlur={() => {
+                if (range?.end && !usableDay(day, range))
+                  setDay(period?.start === period?.end ? period.end : "");
               }}
             />
           </label>
@@ -240,9 +259,12 @@ function App() {
           <form className="date-form" onSubmit={apply}>
             <label>
               From
+              {/* min and max keep the range to days with data; a date outside it, such as a
+                  year still being typed, stops the form with the browser's own message. */}
               <input
                 type="date"
                 required
+                {...limits}
                 value={custom.start}
                 onChange={(event) =>
                   setCustom({ ...custom, start: event.target.value })
@@ -254,6 +276,7 @@ function App() {
               <input
                 type="date"
                 required
+                {...limits}
                 value={custom.end}
                 onChange={(event) =>
                   setCustom({ ...custom, end: event.target.value })
